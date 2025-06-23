@@ -8,9 +8,11 @@ class Event(commands.Cog):
         self.bot = bot
         self.events = {}
         self.next_event_id = 1
+        print('[DEBUG] Event cog initialized')
 
     @commands.command(name="create_event", usage="(event_name/Max_sect)", help="Create a new event.")
     async def create_event(self, ctx, *, event_info: str):
+        print('[DEBUG] create_event called')
         import re
         match = re.match(r"\(([^/]+)/([0-9]+)\)", event_info.strip())
         if not match:
@@ -22,7 +24,9 @@ class Event(commands.Cog):
 
     @commands.command(name="list_events", usage="", help="List all events.")
     async def list_events(self, ctx):
+        print('[DEBUG] list_events command called')
         events = database.list_events(ctx.guild.id)
+        print(f'[DEBUG] Events from DB: {events}')
         if not events:
             await ctx.send("No events found.")
             return
