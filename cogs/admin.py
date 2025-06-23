@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands
-import database
+from database import set_channel, get_channel
 
 class Admin(commands.Cog):
     """Commands for bot administration and configuration."""
@@ -11,45 +11,50 @@ class Admin(commands.Cog):
         # channel_name: mod_channel, event_channel, team_channel, log_channel
         if guild_id is None:
             return None
-        return database.get_channel(guild_id, channel_name)
+        return get_channel(guild_id, channel_name)
 
-    @commands.command(name="set_mod_channel", usage="<#channel>")
-    @commands.has_permissions(administrator=True)
-    async def set_mod_channel(self, ctx, channel: discord.TextChannel):
-        """Sets the channel for moderator commands."""
-        database.set_channel(ctx.guild.id, "mod_channel", channel.id)
-        await ctx.send(f"Moderator channel set to {channel.mention}")
+    async def log_mod_action(self, ctx, command_name, details=None):
+        log_channel_id = self.get_channel_id("log_channel", ctx.guild.id)
+        if not log_channel_id:
+            return
+        log_channel = self.bot.get_channel(log_channel_id)
+        if not log_channel:
+            return
+        embed = discord.Embed(
+            title=f"🔧 Mod Command Executed",
+            description=f"**Command:** `{command_name}`\n**By:** {ctx.author.mention} (`{ctx.author}`)\n**In:** {ctx.channel.mention} (`{ctx.guild.name}`)",
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow()
+        )
+        if details:
+            embed.add_field(name="Details", value=details, inline=False)
+        embed.set_footer(text=f"User ID: {ctx.author.id}")
+        await log_channel.send(embed=embed)
 
-    @commands.command(name="set_event_channel", usage="<#channel>")
+    @commands.command(name="set_channel", usage="<type> <channel>")
     @commands.has_permissions(administrator=True)
-    async def set_event_channel(self, ctx, channel: discord.TextChannel):
-        """Sets the channel for event announcements."""
-        database.set_channel(ctx.guild.id, "event_channel", channel.id)
-        await ctx.send(f"Event channel set to {channel.mention}")
-
-    @commands.command(name="set_team_channel", usage="<#channel>")
-    @commands.has_permissions(administrator=True)
-    async def set_team_channel(self, ctx, channel: discord.TextChannel):
-        """Sets the channel for team joining and management."""
-        database.set_channel(ctx.guild.id, "team_channel", channel.id)
-        await ctx.send(f"Team channel set to {channel.mention}")
-
-    @commands.command(name="set_log_channel", usage="<#channel>")
-    @commands.has_permissions(administrator=True)
-    async def set_log_channel(self, ctx, channel: discord.TextChannel):
-        """Sets the channel for bot logs."""
-        database.set_channel(ctx.guild.id, "log_channel", channel.id)
-        await ctx.send(f"Log channel set to {channel.mention}")
+    async def set_channel(self, ctx, channel_type: str, channel: discord.TextChannel):
+        """Set a channel for a specific purpose (mod, event, team, log, etc)."""
+        set_channel(ctx.guild.id, channel_type.lower(), channel.id)
+        await ctx.send(f"Set {channel_type} channel to {channel.mention}.")
+        details = f"Set `{channel_type}` channel to {channel.mention} ({channel.id})"
+        await self.log_mod_action(ctx, "set_channel", details)
 
     @commands.command(name="show_channels")
+    @commands.has_permissions(administrator=True)
     async def show_channels(self, ctx):
-        """Shows the currently configured channels."""
-        embed = discord.Embed(title="Configured Channels", color=discord.Color.og_blurple())
-        for name in ["mod_channel", "event_channel", "team_channel", "log_channel"]:
-            channel_id = database.get_channel(ctx.guild.id, name)
-            channel_mention = f"<#{channel_id}>" if channel_id else "Not set"
-            embed.add_field(name=name.replace('_', ' ').title(), value=channel_mention, inline=False)
-        await ctx.send(embed=embed)
+        """Show all configured channels for this server."""
+        types = ["mod", "event", "team", "log"]
+        desc = ""
+        for t in types:
+            cid = get_channel(ctx.guild.id, t)
+            if cid:
+                ch = ctx.guild.get_channel(cid)
+                desc += f"**{t.capitalize()}**: {ch.mention if ch else cid}\n"
+            else:
+                desc += f"**{t.capitalize()}**: Not set\n"
+        await ctx.send(f"Configured channels:\n{desc}")
+        await self.log_mod_action(ctx, "show_channels")
 
 async def setup(bot):
     await bot.add_cog(Admin(bot)) 

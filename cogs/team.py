@@ -9,44 +9,52 @@ class Team(commands.Cog):
         self.bot = bot
         self.section_embeds = {}  # Store embed message IDs for each section
 
-    async def send_join_notifications(self, user, team_name, sect_name, event_name, join_type="joined"):
-        """Send DM to user and log message when they join/leave a team"""
+    async def send_join_notifications(self, user, team_name, sect_name, event_name, join_type="joined", method="command"):
+        """Send DM to user when they join/leave a team"""
         try:
-            # Send DM to user
             embed = discord.Embed(
                 title=f"Team {join_type.title()}",
-                description=f"You have {join_type} **{team_name}** in section **{sect_name}** for event **{event_name}**",
-                color=discord.Color.green() if join_type == "joined" else discord.Color.red()
+                description=(
+                    f"You have {join_type} **{team_name}**\n"
+                    f"Section: **{sect_name}**\n"
+                    f"Event: **{event_name}**\n"
+                    f"Method: `{method}`"
+                ),
+                color=discord.Color.green() if join_type == "joined" else discord.Color.red(),
+                timestamp=discord.utils.utcnow()
             )
+            embed.set_footer(text=f"If this wasn't you, contact a moderator.")
             await user.send(embed=embed)
         except discord.Forbidden:
-            # User has DMs disabled
             pass
         except Exception as e:
             print(f"Error sending DM to {user.name}: {e}")
 
-    async def send_log_message(self, user, team_name, sect_name, event_name, join_type="joined"):
-        """Send log message to log channel"""
+    async def send_log_message(self, user, team_name, sect_name, event_name, join_type="joined", method="command"):
+        """Send log message to log channel for join/leave actions"""
         admin_cog = self.bot.get_cog('Admin')
         if not admin_cog:
             return
-            
         log_channel_id = admin_cog.get_channel_id("log_channel")
         if not log_channel_id:
             return
-            
         log_channel = self.bot.get_channel(log_channel_id)
         if not log_channel:
             return
-            
         embed = discord.Embed(
-            title=f"Team {join_type.title()}",
-            description=f"**{user.mention}** has {join_type} **{team_name}** in section **{sect_name}** for event **{event_name}**",
+            title=f"Team {join_type.title()} ({method})",
+            description=(
+                f"**User:** {user.mention} (`{user}`)\n"
+                f"**Team:** {team_name}\n"
+                f"**Section:** {sect_name}\n"
+                f"**Event:** {event_name}\n"
+                f"**Action:** {join_type.title()}\n"
+                f"**Method:** `{method}`"
+            ),
             color=discord.Color.green() if join_type == "joined" else discord.Color.red(),
             timestamp=discord.utils.utcnow()
         )
         embed.set_footer(text=f"User ID: {user.id}")
-        
         await log_channel.send(embed=embed)
 
     async def update_section_embed(self, event_id, sect_name):
@@ -158,46 +166,34 @@ class Team(commands.Cog):
         if not event_cog or not hasattr(event_cog, 'events'):
             await ctx.send("Event data is not available.")
             return
-
         found_teams = []
         for event_id, event in event_cog.events.items():
             for sect_name, sect in event.get('sections', {}).items():
                 if team_name in sect.get('teams', {}):
                     found_teams.append({'event_id': event_id, 'event_name': event['name'], 'section_name': sect_name})
-
         if not found_teams:
             await ctx.send(f"Team '**{team_name}**' not found.")
             return
-
         if len(found_teams) > 1:
             response = f"Found multiple teams with the name '**{team_name}**'. Please be more specific.\n"
             for team_info in found_teams:
                 response += f"- Event: '**{team_info['event_name']}**' (`{team_info['event_id']}`), Section: '**{team_info['section_name']}**'\n"
             await ctx.send(response)
             return
-
         team_info = found_teams[0]
         event_id = team_info['event_id']
         sect_name = team_info['section_name']
         team = event_cog.events[event_id]['sections'][sect_name]['teams'][team_name]
-
         if ctx.author.mention in team['members']:
             await ctx.send(f"You are already in team '**{team_name}**'.")
             return
-
         if len(team['members']) >= team.get('max_members', float('inf')):
             await ctx.send(f"Team '**{team_name}**' is full (Max members: {team.get('max_members', 'unknown')}).")
             return
-
         team['members'].append(ctx.author.mention)
-        
-        # Update the section embed
         await self.update_section_embed(event_id, sect_name)
-        
-        # Send notifications
-        await self.send_join_notifications(ctx.author, team_name, sect_name, event_cog.events[event_id]['name'], "joined")
-        await self.send_log_message(ctx.author, team_name, sect_name, event_cog.events[event_id]['name'], "joined")
-        
+        await self.send_join_notifications(ctx.author, team_name, sect_name, event_cog.events[event_id]['name'], "joined", method="command")
+        await self.send_log_message(ctx.author, team_name, sect_name, event_cog.events[event_id]['name'], "joined", method="command")
         await ctx.send(f"You have joined team '**{team_name}**' in section '**{sect_name}**' for event '**{event_cog.events[event_id]['name']}**'.")
 
     @commands.Cog.listener()
@@ -205,61 +201,42 @@ class Team(commands.Cog):
         """Handle team joining via reactions"""
         if user.bot:
             return
-            
-        # Check if this is a team join channel message
         admin_cog = self.bot.get_cog('Admin')
         if not admin_cog:
             return
-            
         team_channel_id = admin_cog.get_channel_id("team_channel")
         if not team_channel_id or reaction.message.channel.id != team_channel_id:
             return
-            
-        # Find which section this embed belongs to
         event_cog = self.bot.get_cog('Event')
         if not event_cog:
             return
-            
         section_key = None
         for key, embed_id in self.section_embeds.items():
             if embed_id == reaction.message.id:
                 section_key = key
                 break
-                
         if not section_key:
             return
-            
         event_id, sect_name = section_key.split('_', 1)
         event_id = int(event_id)
-        
         event = event_cog.events.get(event_id)
         if not event or sect_name not in event.get('sections', {}):
             return
-            
         section = event['sections'][sect_name]
-        teams = list(section.get('teams', {}).keys())
-        
-        # Find which team this reaction corresponds to
         emoji_to_team = {team_data.get('emoji'): name for name, team_data in section['teams'].items()}
         team_name = emoji_to_team.get(str(reaction.emoji))
         if not team_name:
             return
         team = section['teams'][team_name]
-        
         if user.mention in team['members']:
             await reaction.remove(user)
             return
-            
         if len(team['members']) >= team.get('max_members', float('inf')):
             await reaction.remove(user)
             return
-            
         team['members'].append(user.mention)
-        
-        # Send notifications
-        await self.send_join_notifications(user, team_name, sect_name, event['name'], "joined")
-        await self.send_log_message(user, team_name, sect_name, event['name'], "joined")
-        
+        await self.send_join_notifications(user, team_name, sect_name, event['name'], "joined", method="reaction")
+        await self.send_log_message(user, team_name, sect_name, event['name'], "joined", method="reaction")
         await self.update_section_embed(event_id, sect_name)
 
     @commands.Cog.listener()
@@ -267,54 +244,37 @@ class Team(commands.Cog):
         """Handle team leaving via reactions"""
         if user.bot:
             return
-            
-        # Check if this is a team join channel message
         admin_cog = self.bot.get_cog('Admin')
         if not admin_cog:
             return
-            
         team_channel_id = admin_cog.get_channel_id("team_channel")
         if not team_channel_id or reaction.message.channel.id != team_channel_id:
             return
-            
-        # Find which section this embed belongs to
         event_cog = self.bot.get_cog('Event')
         if not event_cog:
             return
-            
         section_key = None
         for key, embed_id in self.section_embeds.items():
             if embed_id == reaction.message.id:
                 section_key = key
                 break
-                
         if not section_key:
             return
-            
         event_id, sect_name = section_key.split('_', 1)
         event_id = int(event_id)
-        
         event = event_cog.events.get(event_id)
         if not event or sect_name not in event.get('sections', {}):
             return
-            
         section = event['sections'][sect_name]
-        teams = list(section.get('teams', {}).keys())
-        
-        # Find which team this reaction corresponds to
         emoji_to_team = {team_data.get('emoji'): name for name, team_data in section['teams'].items()}
         team_name = emoji_to_team.get(str(reaction.emoji))
         if not team_name:
             return
         team = section['teams'][team_name]
-        
         if user.mention in team['members']:
             team['members'].remove(user.mention)
-            
-            # Send notifications
-            await self.send_join_notifications(user, team_name, sect_name, event['name'], "left")
-            await self.send_log_message(user, team_name, sect_name, event['name'], "left")
-            
+            await self.send_join_notifications(user, team_name, sect_name, event['name'], "left", method="reaction")
+            await self.send_log_message(user, team_name, sect_name, event['name'], "left", method="reaction")
             await self.update_section_embed(event_id, sect_name)
 
     @commands.command(name="delete_team", usage="<event_id> <sect_name> <team_name>")
