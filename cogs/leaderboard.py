@@ -1,3 +1,4 @@
+# cogs/leaderboard.py (rebuilt version)
 import discord
 from discord.ext import commands
 from database import get_leaderboard, set_leaderboard_score, get_team_info, get_sections, get_teams

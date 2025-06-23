@@ -1,3 +1,4 @@
+# database.py (rebuilt version)
 import sqlite3
 from contextlib import closing
 
@@ -96,19 +97,60 @@ def setup_db():
                 PRIMARY KEY (team_id, user_id)
             )
         ''')
+        # Channels table
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS channels (
+                guild_id INTEGER,
+                channel_type TEXT,
+                channel_id INTEGER,
+                PRIMARY KEY (guild_id, channel_type)
+            )
+        ''')
+        # User stats table
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS user_stats (
+                user_id INTEGER,
+                guild_id INTEGER,
+                events_participated INTEGER DEFAULT 0,
+                rank INTEGER DEFAULT 0,
+                team_id INTEGER,
+                PRIMARY KEY (user_id, guild_id)
+            )
+        ''')
+        # Leaderboard table
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS leaderboard (
+                event_id INTEGER,
+                team_id INTEGER,
+                score INTEGER DEFAULT 0,
+                PRIMARY KEY (event_id, team_id)
+            )
+        ''')
+        # Server stats table
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS server_stats (
+                guild_id INTEGER,
+                stat_name TEXT,
+                value INTEGER DEFAULT 0,
+                PRIMARY KEY (guild_id, stat_name)
+            )
+        ''')
         conn.commit()
 
 def set_channel(guild_id, channel_type, channel_id):
     with get_db() as conn:
-        c = conn.cursor()
-        c.execute(f"INSERT INTO channel_config (guild_id, {channel_type}) VALUES (?, ?) ON CONFLICT(guild_id) DO UPDATE SET {channel_type} = excluded.{channel_type}", (guild_id, channel_id))
-        conn.commit()
+        conn.execute(
+            "INSERT OR REPLACE INTO channels (guild_id, channel_type, channel_id) VALUES (?, ?, ?)",
+            (guild_id, channel_type, channel_id)
+        )
 
 def get_channel(guild_id, channel_type):
     with get_db() as conn:
-        c = conn.cursor()
-        c.execute(f"SELECT {channel_type} FROM channel_config WHERE guild_id = ?", (guild_id,))
-        row = c.fetchone()
+        cur = conn.execute(
+            "SELECT channel_id FROM channels WHERE guild_id=? AND channel_type=?",
+            (guild_id, channel_type)
+        )
+        row = cur.fetchone()
         return row[0] if row else None
 
 def log_user_command(guild_id, user_id, command):
@@ -284,4 +326,69 @@ def remove_section(section_id):
         c = conn.cursor()
         c.execute('DELETE FROM sections WHERE section_id = ?', (section_id,))
         c.execute('DELETE FROM teams WHERE section_id = ?', (section_id,))
-        conn.commit() 
+        conn.commit()
+
+# User stats helpers
+def set_user_stats(user_id, guild_id, events_participated=0, rank=0, team_id=None):
+    with get_db() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO user_stats (user_id, guild_id, events_participated, rank, team_id) VALUES (?, ?, ?, ?, ?)",
+            (user_id, guild_id, events_participated, rank, team_id)
+        )
+
+def fetch_user_stats(user_id, guild_id):
+    with get_db() as conn:
+        cur = conn.execute(
+            "SELECT events_participated, rank, team_id FROM user_stats WHERE user_id=? AND guild_id=?",
+            (user_id, guild_id)
+        )
+        return cur.fetchone()
+
+# Leaderboard helpers
+def set_leaderboard_score(event_id, team_id, score):
+    with get_db() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO leaderboard (event_id, team_id, score) VALUES (?, ?, ?)",
+            (event_id, team_id, score)
+        )
+
+def get_leaderboard(event_id):
+    with get_db() as conn:
+        cur = conn.execute(
+            "SELECT team_id, score FROM leaderboard WHERE event_id=? ORDER BY score DESC",
+            (event_id,)
+        )
+        return cur.fetchall()
+
+# Server stats helpers
+def set_server_stat(guild_id, stat_name, value):
+    with get_db() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO server_stats (guild_id, stat_name, value) VALUES (?, ?, ?)",
+            (guild_id, stat_name, value)
+        )
+
+def get_server_stat(guild_id, stat_name):
+    with get_db() as conn:
+        cur = conn.execute(
+            "SELECT value FROM server_stats WHERE guild_id=? AND stat_name=?",
+            (guild_id, stat_name)
+        )
+        row = cur.fetchone()
+        return row[0] if row else 0
+
+def get_team_info(team_id):
+    with get_db() as conn:
+        cur = conn.execute(
+            "SELECT name, section_id, leader_id, max_members FROM teams WHERE team_id=?",
+            (team_id,)
+        )
+        row = cur.fetchone()
+        if row:
+            return {
+                'name': row[0],
+                'section_id': row[1],
+                'leader_id': row[2],
+                'max_members': row[3]
+            }
+        return None 
