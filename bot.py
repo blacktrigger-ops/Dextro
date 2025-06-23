@@ -78,7 +78,9 @@ async def help(ctx):
         return user == ctx.author and reaction.message.id == msg.id and str(reaction.emoji) in ["◀️", "▶️", "🏠"]
     while True:
         try:
+            print("[DEBUG] Waiting for help command reaction...")
             reaction, user = await bot.wait_for('reaction_add', timeout=60.0, check=check)
+            print(f"[DEBUG] Reaction received: {reaction.emoji} by {user}")
             if str(reaction.emoji) == "▶️":
                 current = (current + 1) % len(category_list)
                 await msg.edit(embed=make_embed(current))
@@ -90,7 +92,8 @@ async def help(ctx):
                 home_embed.set_footer(text="React with ◀️ ▶️ to browse categories.")
                 await msg.edit(embed=home_embed)
             await msg.remove_reaction(reaction, user)
-        except Exception:
+        except Exception as e:
+            print(f"[DEBUG] Exiting help command reaction loop: {e}")
             break
 
 @bot.command()
@@ -105,4 +108,4 @@ async def reload(ctx, cog_name: str):
 
 import os
 
-bot.run(os.getenv('TOKEN'))
+bot.run(os.getenv('TOKEN', ''))
