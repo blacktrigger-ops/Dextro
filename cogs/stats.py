@@ -7,16 +7,37 @@ class Stats(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(name="user_stats", usage="[@user]", help="Show command usage stats for a user (default: yourself)")
+    @commands.command(name="user_stats", usage="[@user]", help="Show event participation, team, and rank for a user (default: yourself)")
     async def user_stats(self, ctx, member: Optional[discord.Member] = None):
         member = member or ctx.author
-        stats = database.get_user_stats(ctx.guild.id, member.id)
-        embed = discord.Embed(title=f"User Stats for {member.display_name}", color=discord.Color.blurple())
-        if not stats:
-            embed.description = "No command usage recorded."
+        participations = database.get_user_event_participation(ctx.guild.id, member.id)
+        embed = discord.Embed(title=f"Event Stats for {member.display_name}", color=discord.Color.blurple())
+        embed.set_thumbnail(url=member.display_avatar.url)
+        if not participations:
+            embed.description = "No event participation recorded."
         else:
-            for command, count in stats:
-                embed.add_field(name=command, value=f"Used {count} times", inline=True)
+            for event_id, team_name in participations:
+                team, rank = database.get_user_event_rank(ctx.guild.id, event_id, member.id)
+                value = f"Team: {team_name or 'N/A'}\nRank: {rank if rank is not None else 'N/A'}"
+                embed.add_field(name=f"Event ID: {event_id}", value=value, inline=False)
+        await ctx.send(embed=embed)
+
+    @commands.command(name="team_stats", usage="<event_id> <team_name>", help="Show team stats for an event (score, rank, members)")
+    async def team_stats(self, ctx, event_id: int, *, team_name: str):
+        stats = database.get_team_stats(ctx.guild.id, event_id, team_name)
+        if not stats:
+            await ctx.send("Team or event not found.")
+            return
+        score, rank = stats
+        member_ids = database.get_team_members(ctx.guild.id, event_id, team_name)
+        members = []
+        for uid in member_ids:
+            member = ctx.guild.get_member(uid)
+            members.append(member.mention if member else f"User {uid}")
+        embed = discord.Embed(title=f"Team: {team_name} (Event ID: {event_id})", color=discord.Color.green())
+        embed.add_field(name="Score", value=str(score), inline=True)
+        embed.add_field(name="Rank", value=str(rank) if rank is not None else "N/A", inline=True)
+        embed.add_field(name="Members", value=", ".join(members) if members else "None", inline=False)
         await ctx.send(embed=embed)
 
     @commands.command(name="server_stats", help="Show server-wide event/team/member stats and top users")

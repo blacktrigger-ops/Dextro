@@ -1,6 +1,8 @@
 from discord.ext import commands
 import discord
 
+DEFAULT_TEAM_EMOJIS = ["🦁", "🐯", "🐻", "🦊", "🐸", "🐼", "🐨", "🦄", "🐙", "🐵"]
+
 class Team(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -87,12 +89,11 @@ class Team(commands.Cog):
         if not teams:
             embed.description = "No teams created yet."
         else:
-            for i, (team_name, team_data) in enumerate(teams.items(), 1):
-                emoji = f"{i}️⃣"  # Use number emojis
+            for team_name, team_data in teams.items():
+                emoji = team_data.get('emoji', '❓')
                 leader = team_data.get('leader', 'Unknown')
                 current_members = len(team_data.get('members', []))
                 max_members = team_data.get('max_members', 0)
-                
                 embed.add_field(
                     name=f"{emoji} {team_name}",
                     value=f"**Leader:** {leader}\n**Members:** {current_members}/{max_members}",
@@ -100,6 +101,14 @@ class Team(commands.Cog):
                 )
         
         await embed_message.edit(embed=embed)
+        # Add reactions for each team emoji
+        try:
+            for team in teams.values():
+                emoji = team.get('emoji')
+                if emoji:
+                    await embed_message.add_reaction(emoji)
+        except Exception:
+            pass
 
     @commands.command(name="create_section", usage="<event_id> (sect_name/Max_team)")
     async def create_section(self, ctx, event_id: int, *, section_info: str):
@@ -225,16 +234,66 @@ class Team(commands.Cog):
             await ctx.send(f"Team '**{team_name}**' already exists in section '**{sect_name}**'.")
             return
 
+        # --- Emoji selection logic ---
+        used_emojis = {team.get('emoji') for team in section['teams'].values() if 'emoji' in team}
+        emoji = None
+        leader_member = ctx.guild.get_member_named(leader_mention.strip('@')) if leader_mention.startswith('@') else None
+        if leader_member:
+            try:
+                dm = await leader_member.create_dm()
+                await dm.send(f"You are the leader of **{team_name}** in section **{sect_name}**. Please reply with the emoji you want for your team, or type `skip` to use a default one. (No duplicate emojis allowed in this section!)")
+                def check(m):
+                    return m.author == leader_member and m.channel == dm
+                reply = await self.bot.wait_for('message', timeout=60.0, check=check)
+                content = reply.content.strip()
+                # Check for skip
+                if content.lower() == 'skip':
+                    raise Exception('skip')
+                # Check for custom emoji
+                custom_emoji = None
+                if len(reply.emojis) > 0:
+                    custom_emoji = reply.emojis[0]
+                elif content.startswith('<:') and content.endswith('>'):
+                    # Try to parse custom emoji
+                    import re
+                    match = re.match(r'<:(\w+):(\d+)>', content)
+                    if match:
+                        emoji_id = int(match.group(2))
+                        custom_emoji = discord.utils.get(ctx.guild.emojis, id=emoji_id)
+                if custom_emoji and str(custom_emoji) not in used_emojis:
+                    emoji = str(custom_emoji)
+                elif len(content) == 1 and content not in used_emojis:
+                    emoji = content
+                else:
+                    await dm.send("Invalid or duplicate emoji. Assigning a default one.")
+                    raise Exception('invalid')
+            except Exception:
+                # Timeout, skip, or invalid
+                for e in DEFAULT_TEAM_EMOJIS:
+                    if e not in used_emojis:
+                        emoji = e
+                        break
+                if not emoji:
+                    emoji = DEFAULT_TEAM_EMOJIS[0]  # fallback
+        else:
+            # Fallback if leader not found
+            for e in DEFAULT_TEAM_EMOJIS:
+                if e not in used_emojis:
+                    emoji = e
+                    break
+            if not emoji:
+                emoji = DEFAULT_TEAM_EMOJIS[0]
         section['teams'][team_name] = {
             'members': [leader_mention],
             'leader': leader_mention,
-            'max_members': max_member
+            'max_members': max_member,
+            'emoji': emoji
         }
         
         # Update the section embed
         await self.update_section_embed(event_id, sect_name)
         
-        await ctx.send(f"Team '**{team_name}**' created in section '**{sect_name}**' for event '**{event['name']}**' (Leader: {leader_mention}, Max members: {max_member})")
+        await ctx.send(f"Team '**{team_name}**' created in section '**{sect_name}**' for event '**{event['name']}**' (Leader: {leader_mention}, Max members: {max_member}, Emoji: {emoji})")
 
     @commands.command(name="join_team", usage="<team_name>")
     async def join_team(self, ctx, *, team_name: str):
@@ -325,16 +384,10 @@ class Team(commands.Cog):
         teams = list(section.get('teams', {}).keys())
         
         # Find which team this reaction corresponds to
-        emoji_to_number = {
-            "1️⃣": 1, "2️⃣": 2, "3️⃣": 3, "4️⃣": 4, "5️⃣": 5,
-            "6️⃣": 6, "7️⃣": 7, "8️⃣": 8, "9️⃣": 9, "🔟": 10
-        }
-        
-        team_index = emoji_to_number.get(str(reaction.emoji))
-        if not team_index or team_index > len(teams):
+        emoji_to_team = {team_data.get('emoji'): name for name, team_data in section['teams'].items()}
+        team_name = emoji_to_team.get(str(reaction.emoji))
+        if not team_name:
             return
-            
-        team_name = teams[team_index - 1]
         team = section['teams'][team_name]
         
         if user.mention in team['members']:
@@ -393,16 +446,10 @@ class Team(commands.Cog):
         teams = list(section.get('teams', {}).keys())
         
         # Find which team this reaction corresponds to
-        emoji_to_number = {
-            "1️⃣": 1, "2️⃣": 2, "3️⃣": 3, "4️⃣": 4, "5️⃣": 5,
-            "6️⃣": 6, "7️⃣": 7, "8️⃣": 8, "9️⃣": 9, "🔟": 10
-        }
-        
-        team_index = emoji_to_number.get(str(reaction.emoji))
-        if not team_index or team_index > len(teams):
+        emoji_to_team = {team_data.get('emoji'): name for name, team_data in section['teams'].items()}
+        team_name = emoji_to_team.get(str(reaction.emoji))
+        if not team_name:
             return
-            
-        team_name = teams[team_index - 1]
         team = section['teams'][team_name]
         
         if user.mention in team['members']:

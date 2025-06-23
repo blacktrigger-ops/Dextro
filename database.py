@@ -38,6 +38,27 @@ def setup_db():
                 members_joined INTEGER DEFAULT 0
             )
         ''')
+        # User participation in events/teams
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS user_event_participation (
+                guild_id INTEGER,
+                event_id INTEGER,
+                user_id INTEGER,
+                team_name TEXT,
+                PRIMARY KEY (guild_id, event_id, user_id)
+            )
+        ''')
+        # Team stats per event
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS team_event_stats (
+                guild_id INTEGER,
+                event_id INTEGER,
+                team_name TEXT,
+                score INTEGER DEFAULT 0,
+                rank INTEGER DEFAULT NULL,
+                PRIMARY KEY (guild_id, event_id, team_name)
+            )
+        ''')
         conn.commit()
 
 def set_channel(guild_id, channel_type, channel_id):
@@ -81,4 +102,66 @@ def get_server_stats(guild_id):
         return c.fetchone()
 
 # Call this on bot startup
-setup_db() 
+setup_db()
+
+# --- User Event Participation Functions ---
+def log_user_participation(guild_id, event_id, user_id, team_name):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('''
+            INSERT INTO user_event_participation (guild_id, event_id, user_id, team_name)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(guild_id, event_id, user_id) DO UPDATE SET team_name = excluded.team_name
+        ''', (guild_id, event_id, user_id, team_name))
+        conn.commit()
+
+def get_user_event_participation(guild_id, user_id):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('''
+            SELECT event_id, team_name FROM user_event_participation WHERE guild_id = ? AND user_id = ?
+        ''', (guild_id, user_id))
+        return c.fetchall()
+
+# --- Team Event Stats Functions ---
+def log_team_stats(guild_id, event_id, team_name, score=0, rank=None):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('''
+            INSERT INTO team_event_stats (guild_id, event_id, team_name, score, rank)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(guild_id, event_id, team_name) DO UPDATE SET score = excluded.score, rank = excluded.rank
+        ''', (guild_id, event_id, team_name, score, rank))
+        conn.commit()
+
+def get_team_stats(guild_id, event_id, team_name):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('''
+            SELECT score, rank FROM team_event_stats WHERE guild_id = ? AND event_id = ? AND team_name = ?
+        ''', (guild_id, event_id, team_name))
+        return c.fetchone()
+
+def get_team_members(guild_id, event_id, team_name):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('''
+            SELECT user_id FROM user_event_participation WHERE guild_id = ? AND event_id = ? AND team_name = ?
+        ''', (guild_id, event_id, team_name))
+        return [row[0] for row in c.fetchall()]
+
+def get_user_event_rank(guild_id, event_id, user_id):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('''
+            SELECT team_name FROM user_event_participation WHERE guild_id = ? AND event_id = ? AND user_id = ?
+        ''', (guild_id, event_id, user_id))
+        row = c.fetchone()
+        if not row:
+            return None, None
+        team_name = row[0]
+        c.execute('''
+            SELECT rank FROM team_event_stats WHERE guild_id = ? AND event_id = ? AND team_name = ?
+        ''', (guild_id, event_id, team_name))
+        rank_row = c.fetchone()
+        return team_name, (rank_row[0] if rank_row else None) 
