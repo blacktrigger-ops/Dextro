@@ -68,6 +68,34 @@ def setup_db():
                 max_sections INTEGER
             )
         ''')
+        # Sections table
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS sections (
+                section_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id INTEGER,
+                name TEXT,
+                max_teams INTEGER
+            )
+        ''')
+        # Teams table
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS teams (
+                team_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                section_id INTEGER,
+                name TEXT,
+                leader_id INTEGER,
+                max_members INTEGER,
+                emoji TEXT
+            )
+        ''')
+        # Team members table
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS team_members (
+                team_id INTEGER,
+                user_id INTEGER,
+                PRIMARY KEY (team_id, user_id)
+            )
+        ''')
         conn.commit()
 
 def set_channel(guild_id, channel_type, channel_id):
@@ -198,4 +226,62 @@ def remove_event(event_id):
     with get_db() as conn:
         c = conn.cursor()
         c.execute('DELETE FROM events WHERE event_id = ?', (event_id,))
+        conn.commit()
+
+def add_section(event_id, name, max_teams):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('INSERT INTO sections (event_id, name, max_teams) VALUES (?, ?, ?)', (event_id, name, max_teams))
+        conn.commit()
+        return c.lastrowid
+
+def get_sections(event_id):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('SELECT section_id, name, max_teams FROM sections WHERE event_id = ?', (event_id,))
+        return c.fetchall()
+
+def add_team(section_id, name, leader_id, max_members, emoji):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('INSERT INTO teams (section_id, name, leader_id, max_members, emoji) VALUES (?, ?, ?, ?, ?)', (section_id, name, leader_id, max_members, emoji))
+        conn.commit()
+        return c.lastrowid
+
+def get_teams(section_id):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('SELECT team_id, name, leader_id, max_members, emoji FROM teams WHERE section_id = ?', (section_id,))
+        return c.fetchall()
+
+def add_team_member(team_id, user_id):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('INSERT OR IGNORE INTO team_members (team_id, user_id) VALUES (?, ?)', (team_id, user_id))
+        conn.commit()
+
+def get_team_members_by_id(team_id):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('SELECT user_id FROM team_members WHERE team_id = ?', (team_id,))
+        return [row[0] for row in c.fetchall()]
+
+def remove_team_member(team_id, user_id):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('DELETE FROM team_members WHERE team_id = ? AND user_id = ?', (team_id, user_id))
+        conn.commit()
+
+def remove_team(team_id):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('DELETE FROM teams WHERE team_id = ?', (team_id,))
+        c.execute('DELETE FROM team_members WHERE team_id = ?', (team_id,))
+        conn.commit()
+
+def remove_section(section_id):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('DELETE FROM sections WHERE section_id = ?', (section_id,))
+        c.execute('DELETE FROM teams WHERE section_id = ?', (section_id,))
         conn.commit() 

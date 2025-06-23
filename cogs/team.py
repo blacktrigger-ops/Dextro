@@ -1,5 +1,6 @@
 from discord.ext import commands
 import discord
+import database
 
 DEFAULT_TEAM_EMOJIS = ["🦁", "🐯", "🐻", "🦊", "🐸", "🐼", "🐨", "🦄", "🐙", "🐵"]
 
@@ -112,188 +113,39 @@ class Team(commands.Cog):
 
     @commands.command(name="create_section", usage="<event_id> (sect_name/Max_team)")
     async def create_section(self, ctx, event_id: int, *, section_info: str):
-        """Creates a section for an event. Format: (sect_name/Max_team)"""
-        try:
-            # Parse the format (sect_name/Max_team)
-            if not section_info.startswith('(') or not section_info.endswith(')'):
-                await ctx.send("Invalid format. Please use: `(sect_name/Max_team)`")
-                return
-            
-            content = section_info[1:-1]  # Remove parentheses
-            parts = content.split('/')
-            
-            if len(parts) != 2:
-                await ctx.send("Invalid format. Please use: `(sect_name/Max_team)`")
-                return
-            
-            sect_name = parts[0].strip()
-            max_team = int(parts[1].strip())
-            
-            if max_team <= 0:
-                await ctx.send("Maximum teams must be greater than 0.")
-                return
-                
-        except ValueError:
-            await ctx.send("Invalid format. Maximum teams must be a number. Use: `(sect_name/Max_team)`")
-            return
-
-        event_cog = self.bot.get_cog('Event')
-        admin_cog = self.bot.get_cog('Admin')
-        
-        if not event_cog or not hasattr(event_cog, 'events'):
-            await ctx.send("Event data is not available.")
-            return
-
-        if event_id not in event_cog.events:
+        import re
+        # Check if event exists in the database
+        event = database.get_event(event_id)
+        if not event:
             await ctx.send(f"Event with ID `{event_id}` not found.")
             return
 
-        event = event_cog.events[event_id]
-
-        if 'sections' not in event:
-            event['sections'] = {}
-
-        if len(event['sections']) >= event.get('max_sections', float('inf')):
-            await ctx.send(f"Maximum number of sections ({event.get('max_sections', 'unknown')}) reached for this event.")
+        match = re.match(r"\(([^/]+)/([0-9]+)\)", section_info.strip())
+        if not match:
+            await ctx.send("Invalid format. Use: (Section Name/Max Teams)")
             return
+        sect_name, max_team = match.group(1).strip(), int(match.group(2))
+        section_id = database.add_section(event_id, sect_name, max_team)
+        await ctx.send(f"Section created: **{sect_name}** (ID: `{section_id}`), Max Teams: {max_team}")
 
-        if sect_name in event['sections']:
-            await ctx.send(f"Section '**{sect_name}**' already exists in event '**{event['name']}**'.")
+    @commands.command(name="create_team", usage="<section_id> (team_name/@leader/Max_member)")
+    async def create_team(self, ctx, section_id: int, *, team_info: str):
+        import re
+        match = re.match(r"\(([^/]+)/([^/]+)/([0-9]+)\)", team_info.strip())
+        if not match:
+            await ctx.send("Invalid format. Use: (Team Name/@Leader/Max Members)")
             return
-
-        event['sections'][sect_name] = {
-            'teams': {},
-            'max_teams': max_team
-        }
-        
-        # Send embed to team_join channel
-        team_channel_id = admin_cog.get_channel_id("team_channel")
-        if team_channel_id:
-            team_channel = self.bot.get_channel(team_channel_id)
-            if team_channel:
-                embed = discord.Embed(
-                    title=f"📋 {sect_name}",
-                    description="No teams created yet.",
-                    color=discord.Color.blue()
-                )
-                embed_message = await team_channel.send(embed=embed)
-                self.section_embeds[f"{event_id}_{sect_name}"] = embed_message.id
-        
-        await ctx.send(f"Section '**{sect_name}**' created for event '**{event['name']}**' (Max teams: {max_team})")
-
-    @commands.command(name="create_team", usage="<event_id> <sect_name> (team_name/@leader/Max_member)")
-    async def create_team(self, ctx, event_id: int, sect_name: str, *, team_info: str):
-        """Creates a team for an event. Format: (team_name/@leader/Max_member)"""
-        try:
-            # Parse the format (team_name/@leader/Max_member)
-            if not team_info.startswith('(') or not team_info.endswith(')'):
-                await ctx.send("Invalid format. Please use: `(team_name/@leader/Max_member)`")
-                return
-            
-            content = team_info[1:-1]  # Remove parentheses
-            parts = content.split('/')
-            
-            if len(parts) != 3:
-                await ctx.send("Invalid format. Please use: `(team_name/@leader/Max_member)`")
-                return
-            
-            team_name = parts[0].strip()
-            leader_mention = parts[1].strip()
-            max_member = int(parts[2].strip())
-            
-            if max_member <= 0:
-                await ctx.send("Maximum members must be greater than 0.")
-                return
-                
-        except ValueError:
-            await ctx.send("Invalid format. Maximum members must be a number. Use: `(team_name/@leader/Max_member)`")
-            return
-
-        event_cog = self.bot.get_cog('Event')
-        if not event_cog or not hasattr(event_cog, 'events'):
-            await ctx.send("Event data is not available.")
-            return
-
-        if event_id not in event_cog.events:
-            await ctx.send(f"Event with ID `{event_id}` not found.")
-            return
-
-        event = event_cog.events[event_id]
-
-        if sect_name not in event.get('sections', {}):
-            await ctx.send(f"Section '**{sect_name}**' not found in event '**{event['name']}**'.")
-            return
-
-        section = event['sections'][sect_name]
-
-        if len(section['teams']) >= section.get('max_teams', float('inf')):
-            await ctx.send(f"Maximum number of teams ({section.get('max_teams', 'unknown')}) reached for section '**{sect_name}**'.")
-            return
-
-        if team_name in section['teams']:
-            await ctx.send(f"Team '**{team_name}**' already exists in section '**{sect_name}**'.")
-            return
-
-        # --- Emoji selection logic ---
-        used_emojis = {team.get('emoji') for team in section['teams'].values() if 'emoji' in team}
-        emoji = None
-        leader_member = ctx.guild.get_member_named(leader_mention.strip('@')) if leader_mention.startswith('@') else None
-        if leader_member:
-            try:
-                dm = await leader_member.create_dm()
-                await dm.send(f"You are the leader of **{team_name}** in section **{sect_name}**. Please reply with the emoji you want for your team, or type `skip` to use a default one. (No duplicate emojis allowed in this section!)")
-                def check(m):
-                    return m.author == leader_member and m.channel == dm
-                reply = await self.bot.wait_for('message', timeout=60.0, check=check)
-                content = reply.content.strip()
-                # Check for skip
-                if content.lower() == 'skip':
-                    raise Exception('skip')
-                # Check for custom emoji
-                custom_emoji = None
-                if len(reply.emojis) > 0:
-                    custom_emoji = reply.emojis[0]
-                elif content.startswith('<:') and content.endswith('>'):
-                    # Try to parse custom emoji
-                    import re
-                    match = re.match(r'<:(\w+):(\d+)>', content)
-                    if match:
-                        emoji_id = int(match.group(2))
-                        custom_emoji = discord.utils.get(ctx.guild.emojis, id=emoji_id)
-                if custom_emoji and str(custom_emoji) not in used_emojis:
-                    emoji = str(custom_emoji)
-                elif len(content) == 1 and content not in used_emojis:
-                    emoji = content
-                else:
-                    await dm.send("Invalid or duplicate emoji. Assigning a default one.")
-                    raise Exception('invalid')
-            except Exception:
-                # Timeout, skip, or invalid
-                for e in DEFAULT_TEAM_EMOJIS:
-                    if e not in used_emojis:
-                        emoji = e
-                        break
-                if not emoji:
-                    emoji = DEFAULT_TEAM_EMOJIS[0]  # fallback
+        team_name, leader_mention, max_member = match.group(1).strip(), match.group(2).strip(), int(match.group(3))
+        leader_id = None
+        if leader_mention.startswith('<@') and leader_mention.endswith('>'):
+            leader_id = int(leader_mention.strip('<@!>'))
         else:
-            # Fallback if leader not found
-            for e in DEFAULT_TEAM_EMOJIS:
-                if e not in used_emojis:
-                    emoji = e
-                    break
-            if not emoji:
-                emoji = DEFAULT_TEAM_EMOJIS[0]
-        section['teams'][team_name] = {
-            'members': [leader_mention],
-            'leader': leader_mention,
-            'max_members': max_member,
-            'emoji': emoji
-        }
-        
-        # Update the section embed
-        await self.update_section_embed(event_id, sect_name)
-        
-        await ctx.send(f"Team '**{team_name}**' created in section '**{sect_name}**' for event '**{event['name']}**' (Leader: {leader_mention}, Max members: {max_member}, Emoji: {emoji})")
+            await ctx.send("Please mention the leader user.")
+            return
+        emoji = None  # You can add emoji selection logic here if needed
+        team_id = database.add_team(section_id, team_name, leader_id, max_member, emoji)
+        database.add_team_member(team_id, leader_id)
+        await ctx.send(f"Team created: **{team_name}** (ID: `{team_id}`), Leader: <@{leader_id}>, Max Members: {max_member}")
 
     @commands.command(name="join_team", usage="<team_name>")
     async def join_team(self, ctx, *, team_name: str):
