@@ -114,8 +114,12 @@ class Team(commands.Cog):
     @commands.command(name="create_section", usage="<event_id> (sect_name/Max_team)")
     async def create_section(self, ctx, event_id: int, *, section_info: str):
         import re
-        # Check if event exists in the database
+        # Debug: print all events in DB for this guild
+        all_events = database.list_events(ctx.guild.id)
+        print(f"[DEBUG] All events in DB for guild {ctx.guild.id}: {all_events}")
+
         event = database.get_event(event_id)
+        print(f"[DEBUG] Lookup for event_id {event_id}: {event}")
         if not event:
             await ctx.send(f"Event with ID `{event_id}` not found.")
             return
