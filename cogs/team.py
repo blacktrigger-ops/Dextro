@@ -655,5 +655,25 @@ class Team(commands.Cog):
         
         await ctx.send(f"Member {member_mention} has been disqualified from event '**{event['name']}**'. Removed from teams: {', '.join(removed_from_teams)}")
 
+    @commands.command(name="list_teams", usage="<event_id>", help="List all teams for an event, with their members.")
+    async def list_teams(self, ctx, event_id: int):
+        event_cog = self.bot.get_cog('Event')
+        if not event_cog or not hasattr(event_cog, 'events'):
+            await ctx.send("Event data is not available.")
+            return
+        event = event_cog.events.get(event_id)
+        if not event:
+            await ctx.send("Event not found.")
+            return
+        if not event.get('sections'):
+            await ctx.send("No sections/teams found for this event.")
+            return
+        embed = discord.Embed(title=f"Teams for Event: {event['name']} (ID: {event_id})", color=discord.Color.blue())
+        for sect_name, section in event['sections'].items():
+            for team_name, team in section['teams'].items():
+                members = ', '.join(team['members']) if team['members'] else 'No members yet'
+                embed.add_field(name=f"{team_name} (Section: {sect_name})", value=members, inline=False)
+        await ctx.send(embed=embed)
+
 async def setup(bot):
     await bot.add_cog(Team(bot)) 

@@ -1,5 +1,7 @@
 from discord.ext import commands
 import discord
+import re
+import database
 
 class Event(commands.Cog):
     def __init__(self, bot):
@@ -7,43 +9,27 @@ class Event(commands.Cog):
         self.events = {}
         self.next_event_id = 1
 
-    @commands.command(name="create_event", usage="(event_name/Max_sect)")
+    @commands.command(name="create_event", usage="(event_name/Max_sect)", help="Create a new event.")
     async def create_event(self, ctx, *, event_info: str):
-        """Creates a new event. Format: (event_name/Max_sect)"""
-        try:
-            # Parse the format (event_name/Max_sect)
-            if not event_info.startswith('(') or not event_info.endswith(')'):
-                await ctx.send("Invalid format. Please use: `(event_name/Max_sect)`")
-                return
-            
-            content = event_info[1:-1]  # Remove parentheses
-            parts = content.split('/')
-            
-            if len(parts) != 2:
-                await ctx.send("Invalid format. Please use: `(event_name/Max_sect)`")
-                return
-            
-            event_name = parts[0].strip()
-            max_sect = int(parts[1].strip())
-            
-            if max_sect <= 0:
-                await ctx.send("Maximum sections must be greater than 0.")
-                return
-                
-        except ValueError:
-            await ctx.send("Invalid format. Maximum sections must be a number. Use: `(event_name/Max_sect)`")
+        import re
+        match = re.match(r"\(([^/]+)/([0-9]+)\)", event_info.strip())
+        if not match:
+            await ctx.send("Invalid format! Use: (Event Name/Max Sections)")
             return
+        name, max_sections = match.group(1).strip(), int(match.group(2))
+        event_id = database.add_event(ctx.guild.id, name, max_sections)
+        await ctx.send(f"Event created: **{name}** (ID: `{event_id}`), Max Sections: {max_sections}")
 
-        event_id = self.next_event_id
-        self.events[event_id] = {
-            'name': event_name,
-            'creator': ctx.author.mention,
-            'participants': [],
-            'sections': {},
-            'max_sections': max_sect
-        }
-        self.next_event_id += 1
-        await ctx.send(f"Event '**{event_name}**' created with ID: `{event_id}` (Max sections: {max_sect})")
+    @commands.command(name="list_events", usage="", help="List all events.")
+    async def list_events(self, ctx):
+        events = database.list_events(ctx.guild.id)
+        if not events:
+            await ctx.send("No events found.")
+            return
+        embed = discord.Embed(title="Events", color=discord.Color.green())
+        for event_id, name, max_sections in events:
+            embed.add_field(name=f"{name} (ID: {event_id})", value=f"Max Sections: {max_sections}", inline=False)
+        await ctx.send(embed=embed)
 
     @commands.command(name="close_event", usage="<event_id>")
     @commands.has_permissions(administrator=True)

@@ -59,6 +59,15 @@ def setup_db():
                 PRIMARY KEY (guild_id, event_id, team_name)
             )
         ''')
+        # Events table
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS events (
+                event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                guild_id INTEGER,
+                name TEXT,
+                max_sections INTEGER
+            )
+        ''')
         conn.commit()
 
 def set_channel(guild_id, channel_type, channel_id):
@@ -164,4 +173,29 @@ def get_user_event_rank(guild_id, event_id, user_id):
             SELECT rank FROM team_event_stats WHERE guild_id = ? AND event_id = ? AND team_name = ?
         ''', (guild_id, event_id, team_name))
         rank_row = c.fetchone()
-        return team_name, (rank_row[0] if rank_row else None) 
+        return team_name, (rank_row[0] if rank_row else None)
+
+def add_event(guild_id, name, max_sections):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('INSERT INTO events (guild_id, name, max_sections) VALUES (?, ?, ?)', (guild_id, name, max_sections))
+        conn.commit()
+        return c.lastrowid
+
+def get_event(event_id):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('SELECT event_id, name, max_sections FROM events WHERE event_id = ?', (event_id,))
+        return c.fetchone()
+
+def list_events(guild_id):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('SELECT event_id, name, max_sections FROM events WHERE guild_id = ?', (guild_id,))
+        return c.fetchall()
+
+def remove_event(event_id):
+    with get_db() as conn:
+        c = conn.cursor()
+        c.execute('DELETE FROM events WHERE event_id = ?', (event_id,))
+        conn.commit() 
