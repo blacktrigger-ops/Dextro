@@ -1,8 +1,9 @@
 # database.py (rebuilt version)
 import sqlite3
 from contextlib import closing
+import os
 
-DB_PATH = 'botdata.sqlite3'
+DB_PATH = os.getenv('DB_PATH', '/data/botdata.sqlite3')
 
 def get_db():
     return sqlite3.connect(DB_PATH)
