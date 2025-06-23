@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from database import get_leaderboard, get_team_info, get_team_members_by_id
 
 class Leaderboard(commands.Cog):
     def __init__(self, bot):
@@ -264,6 +265,44 @@ class Leaderboard(commands.Cog):
                     inline=True
                 )
         
+        await ctx.send(embed=embed)
+
+    @commands.command(name="leaderboard", usage="<event_id>", help="Show advanced leaderboard for an event.")
+    async def leaderboard(self, ctx, event_id: int):
+        # Get leaderboard from DB
+        leaderboard = get_leaderboard(event_id)
+        if not leaderboard:
+            await ctx.send("No leaderboard data found for this event.")
+            return
+        embed = discord.Embed(title=f"🏆 Leaderboard - Event {event_id}", color=discord.Color.gold())
+        for i, (team_id, score) in enumerate(leaderboard, 1):
+            team = get_team_info(team_id)
+            if not team:
+                continue
+            team_name = team['name']
+            section_id = team['section_id']
+            leader_id = team['leader_id']
+            max_members = team['max_members']
+            # Get members
+            member_ids = get_team_members_by_id(team_id)
+            members = []
+            for uid in member_ids:
+                member = ctx.guild.get_member(uid)
+                members.append(member.mention if member else f"User {uid}")
+            # Medal emoji
+            medal = ""
+            if i == 1:
+                medal = "🥇 "
+            elif i == 2:
+                medal = "🥈 "
+            elif i == 3:
+                medal = "🥉 "
+            embed.add_field(
+                name=f"{medal}#{i} {team_name}",
+                value=f"**Score:** {score}\n**Section ID:** {section_id}\n**Leader:** <@{leader_id}>\n**Members:** {len(members)}/{max_members}\n{', '.join(members)}",
+                inline=False
+            )
+        embed.set_footer(text=f"Last updated: {discord.utils.utcnow().strftime('%Y-%m-%d %H:%M:%S')}")
         await ctx.send(embed=embed)
 
 async def setup(bot):
