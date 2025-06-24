@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import database
 from typing import Optional
+from database import fetch_user_stats
 
 class Stats(commands.Cog):
     def __init__(self, bot):
@@ -63,6 +64,24 @@ class Stats(commands.Cog):
                 name = member.display_name if member else f"User {uid}"
                 desc += f"**{name}**: {total} commands\n"
             embed.add_field(name="Top Users", value=desc, inline=False)
+        await ctx.send(embed=embed)
+
+    @commands.command(name="profile", usage="[@user]", help="Show user profile: events, rank, team, etc.")
+    async def profile(self, ctx, member: Optional[discord.Member] = None):
+        member = member or ctx.author
+        stats = fetch_user_stats(member.id, ctx.guild.id)
+        embed = discord.Embed(title=f"Profile: {member.display_name}", color=discord.Color.blurple())
+        embed.set_thumbnail(url=member.display_avatar.url)
+        if not stats:
+            embed.description = "No profile data recorded. Participate in events to get started!"
+        else:
+            events_participated, rank, team_id = stats
+            embed.add_field(name="Events Participated", value=str(events_participated), inline=True)
+            embed.add_field(name="Rank", value=str(rank) if rank else "N/A", inline=True)
+            if team_id:
+                embed.add_field(name="Current Team ID", value=str(team_id), inline=True)
+            else:
+                embed.add_field(name="Current Team", value="N/A", inline=True)
         await ctx.send(embed=embed)
 
 async def setup(bot):
