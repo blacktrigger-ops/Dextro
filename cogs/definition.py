@@ -120,5 +120,5 @@ class DefinitionCog(commands.Cog):
         save_data(data)
         await ctx.send(f"Definition #{serial} for **{title}** deleted.")
 
-def setup(bot):
-    bot.add_cog(DefinitionCog(bot)) 
+async def setup(bot):
+    await bot.add_cog(DefinitionCog(bot)) 
