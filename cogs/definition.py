@@ -4,6 +4,7 @@ import json
 import os
 
 DATA_FILE = 'data.json'
+ALLOWED_MOD_SERVER_ID = 1387399782724669470  # Only mods from this server can delete any definition
 
 def load_data():
     if not os.path.exists(DATA_FILE):
@@ -72,9 +73,9 @@ class DefinitionCog(commands.Cog):
             embed.add_field(name=f"#{entry['serial']} by {entry['author']}", value=entry['definition'], inline=False)
         await ctx.send(embed=embed)
 
-    @commands.command(name="del_definition", usage="<serial number> <title>", help="Delete a definition by serial number (author or moderator only). Example: dm.del_definition 2 Python")
+    @commands.command(name="del_definition", usage="<serial number> <title>", help="Delete a definition by serial number (author or moderator from the allowed server only). Example: dm.del_definition 2 Python")
     async def del_definition(self, ctx, serial: int, *, title: str):
-        """Delete a definition by serial number (author or moderator only)."""
+        """Delete a definition by serial number (author or moderator from the allowed server only)."""
         data = load_data()
         if title not in data or not data[title]:
             await ctx.send(f"No definitions found for **{title}**.")
@@ -84,11 +85,15 @@ class DefinitionCog(commands.Cog):
         if not entry:
             await ctx.send(f"No definition with serial `{serial}` found for **{title}**.")
             return
-        # Permission check: author or moderator
+        # Permission check: author or moderator from allowed server
         is_author = str(ctx.author.id) == entry.get('author_id')
-        is_mod = ctx.guild and ctx.author.guild_permissions.manage_messages
+        is_mod = (
+            ctx.guild
+            and ctx.guild.id == ALLOWED_MOD_SERVER_ID
+            and ctx.author.guild_permissions.manage_messages
+        )
         if not (is_author or is_mod):
-            await ctx.send("You do not have permission to delete this definition. Only the author or a moderator can delete it.")
+            await ctx.send("You do not have permission to delete this definition. Only the author or a moderator from the allowed server can delete it.")
             return
         # Remove the entry
         data[title] = [e for e in data[title] if e.get('serial') != serial]
