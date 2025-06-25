@@ -24,10 +24,10 @@ class DefinitionCog(commands.Cog):
     async def on_message(self, message):
         if message.author.bot or not message.reference:
             return
-        if not message.content.startswith('@bot'):
+        if not message.content.lower().startswith('@bot define'):
             return
         # Parse command
-        cmd = message.content[len('@bot'):].strip()
+        cmd = message.content[len('@bot define'):].strip()
         if not cmd:
             return
         if '/' in cmd:
