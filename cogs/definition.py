@@ -29,6 +29,12 @@ class DefinitionCog(commands.Cog):
         # Check if the bot is mentioned at the start of the message
         if message.content.startswith(self.bot.user.mention):
             cmd = message.content[len(self.bot.user.mention):].strip()
+            # Remove leading 'define' or 'definition' if present
+            lowered = cmd.lower()
+            if lowered.startswith('define '):
+                cmd = cmd[7:].strip()
+            elif lowered.startswith('definition '):
+                cmd = cmd[11:].strip()
             # ADD DEFINITION: If this is a reply
             if message.reference:
                 if not cmd:
