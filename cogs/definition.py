@@ -18,13 +18,9 @@ def save_data(data):
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
-class TestCog(commands.Cog):
+class DefinitionCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-
-    @commands.Cog.listener()
-    async def on_message(self, message):
-        print("TestCog on_message fired:", message.content)
 
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -100,6 +96,7 @@ class TestCog(commands.Cog):
                 except Exception:
                     break
             return
+
     @commands.command(name="del_definition", usage="<serial number> <title>", help="Delete a definition by serial number (author or moderator from the allowed server only). Example: dm.del_definition 2 Python")
     async def del_definition(self, ctx, serial: int, *, title: str):
         """Delete a definition by serial number (author or moderator from the allowed server only)."""
@@ -127,5 +124,5 @@ class TestCog(commands.Cog):
         await ctx.send(f"Definition #{serial} for **{title}** deleted.")
 
 async def setup(bot):
-    print("TestCog setup called")
-    await bot.add_cog(TestCog(bot)) 
+    print("DefinitionCog setup called")
+    await bot.add_cog(DefinitionCog(bot)) 
