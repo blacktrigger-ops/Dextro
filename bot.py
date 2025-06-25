@@ -36,6 +36,6 @@ class MyBot(commands.Bot):
             elif ctx.command.qualified_name == 'join_team':
                 database.increment_server_stat(ctx.guild.id, 'members_joined')
 
-bot = MyBot()
-
-bot.run(os.getenv('TOKEN', ''))
+def main():
+    bot = MyBot()
+    bot.run(os.getenv('TOKEN', ''))
