@@ -63,15 +63,37 @@ class DefinitionCog(commands.Cog):
 
     @commands.command(name="getdef", usage="<title>", help="Get all definitions for a title.")
     async def get_definition(self, ctx, *, title: str):
-        """Get all definitions for a title."""
+        """Get all definitions for a title, with navigation."""
         data = load_data()
         if title not in data or not data[title]:
             await ctx.send(f"No definitions found for **{title}**.")
             return
-        embed = discord.Embed(title=f"Definitions for {title}", color=discord.Color.green())
-        for entry in data[title]:
-            embed.add_field(name=f"#{entry['serial']} by {entry['author']}", value=entry['definition'], inline=False)
-        await ctx.send(embed=embed)
+        definitions = data[title]
+        current = 0
+        def make_embed(idx):
+            entry = definitions[idx]
+            embed = discord.Embed(title="Definition", color=discord.Color.green())
+            embed.add_field(name=f"**{title}**", value=f"**Author:** {entry['author']}\n\n{entry['definition']}", inline=False)
+            embed.set_footer(text=f"Definition {idx+1}/{len(definitions)} | Use ◀️ ▶️ to navigate")
+            return embed
+        msg = await ctx.send(embed=make_embed(current))
+        if len(definitions) > 1:
+            await msg.add_reaction("◀️")
+            await msg.add_reaction("▶️")
+        def check(reaction, user):
+            return user == ctx.author and reaction.message.id == msg.id and str(reaction.emoji) in ["◀️", "▶️"]
+        while True and len(definitions) > 1:
+            try:
+                reaction, user = await self.bot.wait_for('reaction_add', timeout=60.0, check=check)
+                if str(reaction.emoji) == "▶️":
+                    current = (current + 1) % len(definitions)
+                    await msg.edit(embed=make_embed(current))
+                elif str(reaction.emoji) == "◀️":
+                    current = (current - 1) % len(definitions)
+                    await msg.edit(embed=make_embed(current))
+                await msg.remove_reaction(reaction, user)
+            except Exception:
+                break
 
     @commands.command(name="del_definition", usage="<serial number> <title>", help="Delete a definition by serial number (author or moderator from the allowed server only). Example: dm.del_definition 2 Python")
     async def del_definition(self, ctx, serial: int, *, title: str):
