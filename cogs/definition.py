@@ -1,3 +1,5 @@
+print("definition.py is being imported")
+
 import discord
 from discord.ext import commands
 import json
@@ -16,9 +18,13 @@ def save_data(data):
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
-class DefinitionCog(commands.Cog):
+class TestCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+
+    @commands.Cog.listener()
+    async def on_message(self, message):
+        print("TestCog on_message fired:", message.content)
 
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -121,4 +127,5 @@ class DefinitionCog(commands.Cog):
         await ctx.send(f"Definition #{serial} for **{title}** deleted.")
 
 async def setup(bot):
-    await bot.add_cog(DefinitionCog(bot)) 
+    print("TestCog setup called")
+    await bot.add_cog(TestCog(bot)) 

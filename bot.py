@@ -15,6 +15,7 @@ class MyBot(commands.Bot):
     async def setup_hook(self):
         for filename in os.listdir('./cogs'):
             if filename.endswith('.py') and not filename.startswith('_'):
+                print("Loading extension:", filename)
                 await self.load_extension(f'cogs.{filename[:-3]}')
 
         # If you have global slash commands, uncomment this
@@ -35,6 +36,9 @@ class MyBot(commands.Bot):
                 database.increment_server_stat(ctx.guild.id, 'teams_created')
             elif ctx.command.qualified_name == 'join_team':
                 database.increment_server_stat(ctx.guild.id, 'members_joined')
+
+    async def on_message(self, message):
+        await self.process_commands(message)
 
 bot = MyBot()
 
