@@ -49,12 +49,16 @@ class DefinitionCog(commands.Cog):
         data = load_data()
         if title not in data:
             data[title] = []
+        # Assign serial number (1-based, unique per title)
+        serial = len(data[title]) + 1
         data[title].append({
             "author": author,
-            "definition": definition
+            "author_id": str(ref_msg.author.id),
+            "definition": definition,
+            "serial": serial
         })
         save_data(data)
-        await message.channel.send(f"Definition for **{title}** by **{author}** saved!")
+        await message.channel.send(f"Definition for **{title}** by **{author}** saved! Serial: `{serial}`")
 
     @commands.command(name="getdef", usage="<title>", help="Get all definitions for a title.")
     async def get_definition(self, ctx, *, title: str):
@@ -65,8 +69,34 @@ class DefinitionCog(commands.Cog):
             return
         embed = discord.Embed(title=f"Definitions for {title}", color=discord.Color.green())
         for entry in data[title]:
-            embed.add_field(name=entry['author'], value=entry['definition'], inline=False)
+            embed.add_field(name=f"#{entry['serial']} by {entry['author']}", value=entry['definition'], inline=False)
         await ctx.send(embed=embed)
+
+    @commands.command(name="del_definition", usage="<serial number> <title>", help="Delete a definition by serial number (author or moderator only). Example: dm.del_definition 2 Python")
+    async def del_definition(self, ctx, serial: int, *, title: str):
+        """Delete a definition by serial number (author or moderator only)."""
+        data = load_data()
+        if title not in data or not data[title]:
+            await ctx.send(f"No definitions found for **{title}**.")
+            return
+        # Find the definition with the given serial
+        entry = next((e for e in data[title] if e.get('serial') == serial), None)
+        if not entry:
+            await ctx.send(f"No definition with serial `{serial}` found for **{title}**.")
+            return
+        # Permission check: author or moderator
+        is_author = str(ctx.author.id) == entry.get('author_id')
+        is_mod = ctx.guild and ctx.author.guild_permissions.manage_messages
+        if not (is_author or is_mod):
+            await ctx.send("You do not have permission to delete this definition. Only the author or a moderator can delete it.")
+            return
+        # Remove the entry
+        data[title] = [e for e in data[title] if e.get('serial') != serial]
+        # Reassign serials to keep them 1-based and unique
+        for idx, e in enumerate(data[title], 1):
+            e['serial'] = idx
+        save_data(data)
+        await ctx.send(f"Definition #{serial} for **{title}** deleted.")
 
 def setup(bot):
     bot.add_cog(DefinitionCog(bot)) 
