@@ -26,76 +26,75 @@ class DefinitionCog(commands.Cog):
     async def on_message(self, message):
         if message.author.bot:
             return
-        # ADD DEFINITION: @bot definition [title]/[author] or @bot definition [title]
-        if message.reference and message.content.lower().startswith('@bot definition'):
-            cmd = message.content[len('@bot definition'):].strip()
-            if not cmd:
-                return
-            if '/' in cmd:
-                title, author = [x.strip() for x in cmd.split('/', 1)]
-            else:
-                title, author = cmd.strip(), None
-            if not title:
-                return
-            try:
-                ref_msg = await message.channel.fetch_message(message.reference.message_id)
-            except Exception:
-                return
-            definition = ref_msg.content
-            if not definition:
-                return
-            if not author:
-                author = ref_msg.author.display_name
-            data = load_data()
-            if title not in data:
-                data[title] = []
-            serial = len(data[title]) + 1
-            data[title].append({
-                "author": author,
-                "author_id": str(ref_msg.author.id),
-                "definition": definition,
-                "serial": serial
-            })
-            save_data(data)
-            await message.channel.send(f"Definition for **{title}** by **{author}** saved! Serial: `{serial}`")
-            return
-        # OUTPUT DEFINITIONS: @bot define [title]
-        if message.content.lower().startswith('@bot define'):
-            cmd = message.content[len('@bot define'):].strip()
-            if not cmd:
-                return
-            title = cmd
-            data = load_data()
-            if title not in data or not data[title]:
-                await message.channel.send(f"No definitions found for **{title}**.")
-                return
-            definitions = data[title]
-            current = 0
-            def make_embed(idx):
-                entry = definitions[idx]
-                embed = discord.Embed(title="Definition", color=discord.Color.green())
-                embed.add_field(name=f"**{title}**", value=f"**Author:** {entry['author']}\n\n{entry['definition']}", inline=False)
-                embed.set_footer(text=f"Definition {idx+1}/{len(definitions)} | Use ◀️ ▶️ to navigate")
-                return embed
-            msg = await message.channel.send(embed=make_embed(current))
-            if len(definitions) > 1:
-                await msg.add_reaction("◀️")
-                await msg.add_reaction("▶️")
-            def check(reaction, user):
-                return user == message.author and reaction.message.id == msg.id and str(reaction.emoji) in ["◀️", "▶️"]
-            while True and len(definitions) > 1:
+        # Check if the bot is mentioned at the start of the message
+        if message.content.startswith(self.bot.user.mention):
+            cmd = message.content[len(self.bot.user.mention):].strip()
+            # ADD DEFINITION: If this is a reply
+            if message.reference:
+                if not cmd:
+                    return
+                if '/' in cmd:
+                    title, author = [x.strip() for x in cmd.split('/', 1)]
+                else:
+                    title, author = cmd.strip(), None
+                if not title:
+                    return
                 try:
-                    reaction, user = await self.bot.wait_for('reaction_add', timeout=60.0, check=check)
-                    if str(reaction.emoji) == "▶️":
-                        current = (current + 1) % len(definitions)
-                        await msg.edit(embed=make_embed(current))
-                    elif str(reaction.emoji) == "◀️":
-                        current = (current - 1) % len(definitions)
-                        await msg.edit(embed=make_embed(current))
-                    await msg.remove_reaction(reaction, user)
+                    ref_msg = await message.channel.fetch_message(message.reference.message_id)
                 except Exception:
-                    break
-            return
+                    return
+                definition = ref_msg.content
+                if not definition:
+                    return
+                if not author:
+                    author = ref_msg.author.display_name
+                data = load_data()
+                if title not in data:
+                    data[title] = []
+                serial = len(data[title]) + 1
+                data[title].append({
+                    "author": author,
+                    "author_id": str(ref_msg.author.id),
+                    "definition": definition,
+                    "serial": serial
+                })
+                save_data(data)
+                await message.channel.send(f"Definition for **{title}** by **{author}** saved! Serial: `{serial}`")
+                return
+            # OUTPUT DEFINITIONS: If not a reply
+            if cmd:
+                title = cmd
+                data = load_data()
+                if title not in data or not data[title]:
+                    await message.channel.send(f"No definitions found for **{title}**.")
+                    return
+                definitions = data[title]
+                current = 0
+                def make_embed(idx):
+                    entry = definitions[idx]
+                    embed = discord.Embed(title="Definition", color=discord.Color.green())
+                    embed.add_field(name=f"**{title}**", value=f"**Author:** {entry['author']}\n\n{entry['definition']}", inline=False)
+                    embed.set_footer(text=f"Definition {idx+1}/{len(definitions)} | Use ◀️ ▶️ to navigate")
+                    return embed
+                msg = await message.channel.send(embed=make_embed(current))
+                if len(definitions) > 1:
+                    await msg.add_reaction("◀️")
+                    await msg.add_reaction("▶️")
+                def check(reaction, user):
+                    return user == message.author and reaction.message.id == msg.id and str(reaction.emoji) in ["◀️", "▶️"]
+                while True and len(definitions) > 1:
+                    try:
+                        reaction, user = await self.bot.wait_for('reaction_add', timeout=60.0, check=check)
+                        if str(reaction.emoji) == "▶️":
+                            current = (current + 1) % len(definitions)
+                            await msg.edit(embed=make_embed(current))
+                        elif str(reaction.emoji) == "◀️":
+                            current = (current - 1) % len(definitions)
+                            await msg.edit(embed=make_embed(current))
+                        await msg.remove_reaction(reaction, user)
+                    except Exception:
+                        break
+                return
 
     @commands.command(name="del_definition", usage="<serial number> <title>", help="Delete a definition by serial number (author or moderator from the allowed server only). Example: dm.del_definition 2 Python")
     async def del_definition(self, ctx, serial: int, *, title: str):
