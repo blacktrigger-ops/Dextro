@@ -124,7 +124,7 @@ def setup_db():
                 user_id BIGINT,
                 guild_id BIGINT,
                 events_participated INT DEFAULT 0,
-                rank INT DEFAULT 0,
+                `rank` INT DEFAULT 0,
                 team_id BIGINT,
                 PRIMARY KEY (user_id, guild_id)
             )
@@ -346,16 +346,16 @@ def set_user_stats(user_id, guild_id, events_participated=0, rank=0, team_id=Non
     with get_db() as conn:
         c = conn.cursor()
         c.execute('''
-            INSERT INTO user_stats (user_id, guild_id, events_participated, rank, team_id)
+            INSERT INTO user_stats (user_id, guild_id, events_participated, `rank`, team_id)
             VALUES (%s, %s, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE events_participated=VALUES(events_participated), rank=VALUES(rank), team_id=VALUES(team_id)
+            ON DUPLICATE KEY UPDATE events_participated=VALUES(events_participated), `rank`=VALUES(`rank`), team_id=VALUES(team_id)
         ''', (user_id, guild_id, events_participated, rank, team_id))
         conn.commit()
 
 def fetch_user_stats(user_id, guild_id):
     with get_db() as conn:
         c = conn.cursor()
-        c.execute('''SELECT events_participated, rank, team_id FROM user_stats WHERE user_id = %s AND guild_id = %s''', (user_id, guild_id))
+        c.execute('''SELECT events_participated, `rank`, team_id FROM user_stats WHERE user_id = %s AND guild_id = %s''', (user_id, guild_id))
         return c.fetchone()
 
 # Leaderboard helpers
