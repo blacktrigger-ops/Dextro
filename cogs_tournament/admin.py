@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 from database import set_channel, get_channel
+import config
 
 class Admin(commands.Cog):
     """Commands for bot administration and configuration."""
@@ -30,6 +31,19 @@ class Admin(commands.Cog):
             embed.add_field(name="Details", value=details, inline=False)
         embed.set_footer(text=f"User ID: {ctx.author.id}")
         await log_channel.send(embed=embed)
+
+    @commands.command(name="set_mode", usage="<definition|tournament|both>")
+    @commands.has_permissions(administrator=True)
+    async def set_mode(self, ctx, mode: str):
+        """Set the bot mode and reload cogs (admin only)."""
+        mode = mode.lower()
+        if mode not in ("definition", "tournament", "both"):
+            await ctx.send("Invalid mode. Choose from: definition, tournament, both.")
+            return
+        config.set_mode(mode)
+        await ctx.send(f"Bot mode set to **{mode}**. Reloading cogs...")
+        await self.bot.reload_cogs(mode)
+        await ctx.send(f"Cogs reloaded for mode: **{mode}**.")
 
     @commands.command(name="set_channel", usage="<type> <channel>")
     @commands.has_permissions(administrator=True)

@@ -16,6 +16,24 @@ COGS_TOURNAMENT = [
     'cogs_tournament.stats',
 ]
 
+def get_cogs_for_mode(mode):
+    if mode == 'definition':
+        return COGS_DEFINITION
+    elif mode == 'tournament':
+        return COGS_TOURNAMENT
+    else:
+        return COGS_DEFINITION + COGS_TOURNAMENT
+
+async def reload_cogs(bot, mode):
+    # Unload all loaded cogs
+    for cog in list(bot.extensions):
+        await bot.unload_extension(cog)
+    # Load new cogs
+    for cog in get_cogs_for_mode(mode):
+        print(f"Loading extension: {cog}")
+        await bot.load_extension(cog)
+
+
 def main():
     bot = MyBot(
         command_prefix='dm.',
@@ -24,18 +42,9 @@ def main():
     )
 
     async def setup():
-        if config.BOT_MODE == 'definition':
-            for cog in COGS_DEFINITION:
-                print(f"Loading extension: {cog}")
-                await bot.load_extension(cog)
-        elif config.BOT_MODE == 'tournament':
-            for cog in COGS_TOURNAMENT:
-                print(f"Loading extension: {cog}")
-                await bot.load_extension(cog)
-        else:  # both
-            for cog in COGS_DEFINITION + COGS_TOURNAMENT:
-                print(f"Loading extension: {cog}")
-                await bot.load_extension(cog)
+        mode = config.get_mode()
+        await reload_cogs(bot, mode)
 
     bot.setup_hook = setup
+    bot.reload_cogs = lambda mode: reload_cogs(bot, mode)  # Attach for admin command
     bot.run(config.DISCORD_TOKEN) 
