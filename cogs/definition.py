@@ -40,8 +40,8 @@ class DefinitionCog(commands.Cog):
         self.bot = bot
 
     @commands.command(name="help", usage="definitions", help="Show help for the definitions system. Usage: dm.help definitions")
-    async def help_definitions(self, ctx, *, arg: str = None):
-        if arg is None or arg.lower() != "definitions":
+    async def help_definitions(self, ctx, *, arg: str = ""):
+        if arg.lower() != "definitions":
             return  # Only respond to 'dm.help definitions'
         embed = discord.Embed(
             title="Definitions Help",
@@ -149,7 +149,7 @@ class DefinitionCog(commands.Cog):
                     return user == message.author and reaction.message.id == msg.id and str(reaction.emoji) in ["◀️", "▶️"]
                 while True and len(definitions) > 1:
                     try:
-                        reaction, user = await self.bot.wait_for('reaction_add', timeout=60.0, check=check)
+                        reaction, user = await self.bot.wait_for('reaction_add', timeout=600.0, check=check)
                         if str(reaction.emoji) == "▶️":
                             current = (current + 1) % len(definitions)
                             await msg.edit(embed=make_embed(current))
