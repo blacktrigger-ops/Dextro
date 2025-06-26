@@ -5,8 +5,8 @@ import os
 # Bot mode: 'definition', 'tournament', or 'both'
 BOT_MODE = "both"
 
-# Discord bot token (set this to your actual token or use an environment variable in production)
-DISCORD_TOKEN = "your-token-here"
+# Discord bot token: use environment variable if set, else fallback
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "your-token-here")
 
 MODE_FILE = "mode.txt"
 
