@@ -26,9 +26,14 @@ def ensure_table():
             title VARCHAR(255) NOT NULL,
             author VARCHAR(255) NOT NULL,
             author_id VARCHAR(32) NOT NULL,
-            definition TEXT NOT NULL
+            definition TEXT NOT NULL,
+            reference VARCHAR(255) DEFAULT NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     ''')
+    try:
+        c.execute('ALTER TABLE definitions ADD COLUMN reference VARCHAR(255) DEFAULT NULL')
+    except Exception:
+        pass
     conn.commit()
     c.close()
     conn.close()
@@ -52,8 +57,8 @@ class DefinitionCog(commands.Cog):
             name="Add a Definition",
             value=(
                 "1. **Reply** to the message you want to save as a definition.\n"
-                "2. Mention the bot and type: `define <title>[/author]` or `definition <title>[/author]`\n"
-                "   - Example: `@Bot define Python/Guido` (author is optional)\n"
+                "2. Mention the bot and type: `define <title>[/author][/reference]` or `definition <title>[/author][/reference]`\n"
+                "   - Example: `@Bot define Python/Guido/PEP 8` (author and reference are optional)\n"
                 "3. The replied message's content will be saved as the definition."
             ),
             inline=False
@@ -94,10 +99,11 @@ class DefinitionCog(commands.Cog):
             if message.reference:
                 if not cmd:
                     return
-                if '/' in cmd:
-                    title, author = [x.strip() for x in cmd.split('/', 1)]
-                else:
-                    title, author = cmd.strip(), None
+                # Parse title, author, reference
+                parts = [x.strip() for x in cmd.split('/')]
+                title = parts[0] if len(parts) > 0 else None
+                author = parts[1] if len(parts) > 1 else None
+                reference = parts[2] if len(parts) > 2 else None
                 if not title:
                     return
                 try:
@@ -114,8 +120,8 @@ class DefinitionCog(commands.Cog):
                 c.execute("SELECT COUNT(*) FROM definitions WHERE title = %s", (title,))
                 serial = c.fetchone()[0] + 1
                 c.execute(
-                    "INSERT INTO definitions (title, author, author_id, definition) VALUES (%s, %s, %s, %s)",
-                    (title, author, str(ref_msg.author.id), definition)
+                    "INSERT INTO definitions (title, author, author_id, definition, reference) VALUES (%s, %s, %s, %s, %s)",
+                    (title, author, str(ref_msg.author.id), definition, reference)
                 )
                 conn.commit()
                 c.close()
@@ -138,7 +144,7 @@ class DefinitionCog(commands.Cog):
                 def make_embed(idx):
                     entry = definitions[idx]
                     embed = discord.Embed(title="Definition", color=discord.Color.green())
-                    embed.add_field(name=f"**{title}**", value=f"**Author:** {entry['author']}\n\n{entry['definition']}", inline=False)
+                    embed.add_field(name=f"**{title}**", value=f"**Author:** {entry['author']}\n**Reference:** {entry.get('reference') or 'None'}\n\n{entry['definition']}", inline=False)
                     embed.set_footer(text=f"Definition {idx+1}/{len(definitions)} | Use ◀️ ▶️ to navigate")
                     return embed
                 msg = await message.channel.send(embed=make_embed(current))
