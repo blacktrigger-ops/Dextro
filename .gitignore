@@ -1,6 +1,5 @@
 # Ignore token file
 token.txt
-config.py
 
 # Python
 __pycache__/
