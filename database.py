@@ -68,7 +68,7 @@ def setup_db():
                 event_id BIGINT,
                 team_name VARCHAR(255),
                 score INT DEFAULT 0,
-                rank INT DEFAULT NULL,
+                `rank` INT DEFAULT NULL,
                 PRIMARY KEY (guild_id, event_id, team_name)
             )
         ''')
@@ -222,9 +222,9 @@ def log_team_stats(guild_id, event_id, team_name, score=0, rank=None):
     with get_db() as conn:
         c = conn.cursor()
         c.execute('''
-            INSERT INTO team_event_stats (guild_id, event_id, team_name, score, rank)
+            INSERT INTO team_event_stats (guild_id, event_id, team_name, score, `rank`)
             VALUES (%s, %s, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE score = VALUES(score), rank = VALUES(rank)
+            ON DUPLICATE KEY UPDATE score = VALUES(score), `rank` = VALUES(`rank`)
         ''', (guild_id, event_id, team_name, score, rank))
         conn.commit()
 
@@ -232,7 +232,7 @@ def get_team_stats(guild_id, event_id, team_name):
     with get_db() as conn:
         c = conn.cursor()
         c.execute('''
-            SELECT score, rank FROM team_event_stats WHERE guild_id = %s AND event_id = %s AND team_name = %s
+            SELECT score, `rank` FROM team_event_stats WHERE guild_id = %s AND event_id = %s AND team_name = %s
         ''', (guild_id, event_id, team_name))
         return c.fetchone()
 
@@ -255,7 +255,7 @@ def get_user_event_rank(guild_id, event_id, user_id):
             return None, None
         team_name = row[0]
         c.execute('''
-            SELECT rank FROM team_event_stats WHERE guild_id = %s AND event_id = %s AND team_name = %s
+            SELECT `rank` FROM team_event_stats WHERE guild_id = %s AND event_id = %s AND team_name = %s
         ''', (guild_id, event_id, team_name))
         rank_row = c.fetchone()
         return team_name, (rank_row[0] if rank_row else None)
