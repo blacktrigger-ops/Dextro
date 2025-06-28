@@ -70,6 +70,13 @@ class Admin(commands.Cog):
         await ctx.send(f"Configured channels:\n{desc}")
         await self.log_mod_action(ctx, "show_channels")
 
+    @commands.command(name="show_mode")
+    async def show_mode(self, ctx):
+        """Show the current bot mode (definition, tournament, or both)."""
+        import config
+        mode = config.get_mode()
+        await ctx.send(f"Current bot mode: **{mode}**")
+
     @commands.command(name="help", usage="<tournament|definitions>", help="Show help for the bot systems. Usage: dm.help tournament or dm.help definitions")
     async def help_command(self, ctx, *, arg: str = ""):
         if arg.lower() == "tournament":
