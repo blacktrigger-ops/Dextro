@@ -4,7 +4,17 @@ import sqlite3
 import os
 from contextlib import contextmanager
 
-MYSQL_CONFIG = {
+# Railway MySQL configuration (for deployment)
+RAILWAY_MYSQL_CONFIG = {
+    'host': 'mysql.railway.internal',
+    'port': 3306,
+    'database': 'railway',
+    'user': 'root',
+    'password': 'UpXiofqjknhWmszqIqTxBcMlhLpZGGId',
+}
+
+# Local MySQL configuration (for development)
+LOCAL_MYSQL_CONFIG = {
     'host': os.getenv('MYSQL_HOST', 'localhost'),
     'port': int(os.getenv('MYSQL_PORT', 3306)),
     'user': os.getenv('MYSQL_USER', 'root'),
@@ -12,13 +22,31 @@ MYSQL_CONFIG = {
     'database': os.getenv('MYSQL_DATABASE', 'botdb'),
 }
 
+# Use Railway MySQL if available, otherwise fall back to local MySQL or SQLite
+def get_mysql_config():
+    # Try Railway MySQL first
+    try:
+        test_conn = mysql.connector.connect(**RAILWAY_MYSQL_CONFIG)
+        test_conn.close()
+        return RAILWAY_MYSQL_CONFIG
+    except:
+        # Try local MySQL
+        try:
+            test_conn = mysql.connector.connect(**LOCAL_MYSQL_CONFIG)
+            test_conn.close()
+            return LOCAL_MYSQL_CONFIG
+        except:
+            return None
+
+MYSQL_CONFIG = get_mysql_config()
+
 # Flag to track if we're using MySQL or SQLite
-USE_MYSQL = True
+USE_MYSQL = MYSQL_CONFIG is not None
 
 @contextmanager
 def get_db():
     global USE_MYSQL
-    if USE_MYSQL:
+    if USE_MYSQL and MYSQL_CONFIG:
         try:
             conn = mysql.connector.connect(**MYSQL_CONFIG)
             try:
