@@ -85,6 +85,13 @@ def setup_db():
                         log_channel BIGINT
                     )
                 ''')
+                # Bot configuration table
+                c.execute('''
+                    CREATE TABLE IF NOT EXISTS bot_config (
+                        config_key VARCHAR(64) PRIMARY KEY,
+                        config_value TEXT
+                    )
+                ''')
                 # User usage
                 c.execute('''
                     CREATE TABLE IF NOT EXISTS user_usage (
@@ -209,6 +216,13 @@ def setup_db():
                         event_channel INTEGER,
                         team_channel INTEGER,
                         log_channel INTEGER
+                    )
+                ''')
+                # Bot configuration table
+                c.execute('''
+                    CREATE TABLE IF NOT EXISTS bot_config (
+                        config_key TEXT PRIMARY KEY,
+                        config_value TEXT
                     )
                 ''')
                 c.execute('''
@@ -602,4 +616,30 @@ def get_team_info(team_id):
             'leader': row[1],
             'max_members': row[2],
             'emoji': row[3],
-        } 
+        }
+
+# Bot configuration functions
+def get_bot_config(key, default=None):
+    with get_db() as conn:
+        c = conn.cursor()
+        if USE_MYSQL:
+            c.execute("SELECT config_value FROM bot_config WHERE config_key = %s", (key,))
+        else:
+            c.execute("SELECT config_value FROM bot_config WHERE config_key = ?", (key,))
+        row = c.fetchone()
+        return row[0] if row else default
+
+def set_bot_config(key, value):
+    with get_db() as conn:
+        c = conn.cursor()
+        if USE_MYSQL:
+            c.execute(
+                "REPLACE INTO bot_config (config_key, config_value) VALUES (%s, %s)",
+                (key, value)
+            )
+        else:
+            c.execute(
+                "INSERT OR REPLACE INTO bot_config (config_key, config_value) VALUES (?, ?)",
+                (key, value)
+            )
+        conn.commit() 
