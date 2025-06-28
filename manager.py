@@ -11,18 +11,22 @@ COGS_DEFINITION = [
 COGS_TOURNAMENT = [
     'cogs_tournament.event',
     'cogs_tournament.team',
-    'cogs_tournament.admin',
     'cogs_tournament.leaderboard',
     'cogs_tournament.stats',
 ]
 
+# Admin cog is always loaded regardless of mode
+COGS_ADMIN = [
+    'cogs_tournament.admin',
+]
+
 def get_cogs_for_mode(mode):
     if mode == 'definition':
-        return COGS_DEFINITION
+        return COGS_DEFINITION + COGS_ADMIN
     elif mode == 'tournament':
-        return COGS_TOURNAMENT
+        return COGS_TOURNAMENT + COGS_ADMIN
     else:
-        return COGS_DEFINITION + COGS_TOURNAMENT
+        return COGS_DEFINITION + COGS_TOURNAMENT + COGS_ADMIN
 
 async def reload_cogs(bot, mode):
     # Unload all loaded cogs
