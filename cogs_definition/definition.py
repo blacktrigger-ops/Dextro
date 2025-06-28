@@ -47,46 +47,6 @@ class DefinitionCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(name="help_definitions", usage="definitions", help="Show help for the definitions system. Usage: dm.help_definitions definitions")
-    async def help_definitions(self, ctx, *, arg: str = ""):
-        if arg.lower() != "definitions":
-            return  # Only respond to 'dm.help_definitions definitions'
-        embed = discord.Embed(
-            title="Definitions Help",
-            color=discord.Color.blue(),
-            description="How to use the Definitions system:"
-        )
-        embed.add_field(
-            name="Add a Definition",
-            value=(
-                "1. **Reply** to the message you want to save as a definition.\n"
-                "2. Mention the bot and type: `define <title>[/author][/reference]` or `definition <title>[/author][/reference]`\n"
-                "   - Example: `@Bot define Python/Guido/PEP 8` (author and reference are optional)\n"
-                "3. The replied message's content will be saved as the definition."
-            ),
-            inline=False
-        )
-        embed.add_field(
-            name="Get a Definition",
-            value=(
-                "Mention the bot and type: `define <title>` or `definition <title>`\n"
-                "- Example: `@Bot define Python`\n"
-                "- If multiple definitions exist, use ◀️ ▶️ reactions to navigate."
-            ),
-            inline=False
-        )
-        embed.add_field(
-            name="Delete a Definition",
-            value=(
-                "Command: `dm.del_definition <serial> <title>`\n"
-                "- Only the author or a moderator from the allowed server can delete.\n"
-                "- Example: `dm.del_definition 2 Python`"
-            ),
-            inline=False
-        )
-        embed.set_footer(text="For more help, contact a moderator.")
-        await ctx.send(embed=embed)
-
     @commands.Cog.listener()
     async def on_message(self, message):
         if message.author.bot:
