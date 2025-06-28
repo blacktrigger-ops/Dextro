@@ -70,10 +70,10 @@ class Admin(commands.Cog):
         await ctx.send(f"Configured channels:\n{desc}")
         await self.log_mod_action(ctx, "show_channels")
 
-    @commands.command(name="help", usage="tournament", help="Show help for the tournament system. Usage: dm.help tournament")
+    @commands.command(name="help_tournament", usage="tournament", help="Show help for the tournament system. Usage: dm.help_tournament tournament")
     async def help_tournament(self, ctx, *, arg: str = ""):
         if arg.lower() != "tournament":
-            return  # Only respond to 'dm.help tournament'
+            return  # Only respond to 'dm.help_tournament tournament'
         embed = discord.Embed(
             title="Tournament Help",
             color=discord.Color.purple(),
