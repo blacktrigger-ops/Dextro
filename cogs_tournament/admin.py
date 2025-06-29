@@ -178,9 +178,7 @@ class Admin(commands.Cog):
             embed.add_field(
                 name="📢 Tournament Announcements",
                 value=(
-                    "• `dm.announce <event_id> <text>` - Send general announcement\n"
-                    "• `dm.ban_announce <event_id> <@user> <reason>` - Announce tournament ban\n"
-                    "• `dm.rule_announce <event_id> <rule_text>` - Announce rule update"
+                    "• `dm.announce <event_id> [announcement]` - Send tournament announcement"
                 ),
                 inline=False
             )
