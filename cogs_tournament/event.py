@@ -150,15 +150,20 @@ class Event(commands.Cog):
         team_cog = self.bot.get_cog('Team')
         leaderboard_cog = self.bot.get_cog('Leaderboard')
 
-        if event_id not in self.events:
-            await ctx.send(f"Event with ID `{event_id}` not found.")
-            return
-
-        event = self.events[event_id]
-        event_name = event['name']
+        event = self.events.get(event_id)
+        event_name = None
+        if not event:
+            # Try to get from DB
+            db_event = database.get_event(event_id)
+            if not db_event:
+                await ctx.send(f"Event with ID `{event_id}` not found.")
+                return
+            event_name = db_event[2]  # type: ignore
+        else:
+            event_name = event['name']
 
         # Delete all section embeds (memory)
-        if team_cog:
+        if event and team_cog:
             for sect_name in event.get('sections', {}).keys():
                 section_key = f"{event_id}_{sect_name}"
                 if section_key in team_cog.section_embeds:
@@ -197,7 +202,8 @@ class Event(commands.Cog):
             return
 
         # Delete the event (memory)
-        del self.events[event_id]
+        if event_id in self.events:
+            del self.events[event_id]
         if hasattr(self, 'event_embeds') and event_id in self.event_embeds:
             del self.event_embeds[event_id]
 
@@ -227,24 +233,37 @@ class Event(commands.Cog):
         admin_cog = self.bot.get_cog('Admin')
         leaderboard_cog = self.bot.get_cog('Leaderboard')
 
-        if event_id not in self.events:
-            await ctx.send(f"Event with ID `{event_id}` not found.")
-            return
-
-        event = self.events[event_id]
-        event_name = event['name']
+        event = self.events.get(event_id)
+        event_name = None
+        if not event:
+            db_event = database.get_event(event_id)
+            if not db_event:
+                await ctx.send(f"Event with ID `{event_id}` not found.")
+                return
+            event_name = db_event[2]  # type: ignore
+        else:
+            event_name = event['name']
 
         # Get leaderboard data
         event_scores = {}
         if leaderboard_cog and event_id in getattr(leaderboard_cog, 'scores', {}):
             event_scores = leaderboard_cog.scores[event_id].copy()
+        # If not in memory, try to get from DB
+        if not event_scores:
+            try:
+                with database.get_db() as conn:
+                    c = conn.cursor()
+                    c.execute('SELECT team_name, score FROM team_event_stats WHERE event_id = %s', (event_id,))
+                    event_scores = {row[0]: int(row[1]) for row in c.fetchall()}  # type: ignore
+            except Exception:
+                event_scores = {}
 
         if not event_scores:
             await ctx.send(f"No scores recorded for event '**{event_name}**'. Cannot declare winners.")
             return
 
         # Sort teams by score
-        sorted_teams = sorted(event_scores.items(), key=lambda x: x[1], reverse=True)
+        sorted_teams = sorted(event_scores.items(), key=lambda x: int(x[1]), reverse=True)
 
         # Create winners embed
         embed = discord.Embed(
