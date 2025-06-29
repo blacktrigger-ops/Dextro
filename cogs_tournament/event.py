@@ -208,22 +208,23 @@ class Event(commands.Cog):
             del self.event_embeds[event_id]
 
         # Attempt to delete the game channel from Discord
+        def normalize_channel_name(name):
+            # Remove emojis and special characters, lower case, remove spaces/dashes/underscores
+            name = re.sub(r'[^\w\s-]', '', name)
+            return name.lower().replace(' ', '').replace('-', '').replace('_', '')
+
         game_channel_id = None
         if event and 'game_channel_id' in event:
             game_channel_id = event['game_channel_id']
-        # Try to find the channel by name if not in memory
         game_channel = None
         if game_channel_id:
             game_channel = ctx.guild.get_channel(game_channel_id)
         if not game_channel:
-            # Fallback: try to find by name
-            channel_name = str(event_name)
-            if hasattr(channel_name, 'lower'):
-                channel_name = f"🎮 {channel_name.lower().replace(' ', '-')}"
-            else:
-                channel_name = f"🎮 {channel_name}"
+            # Improved fallback: search for channel by normalized event name
+            event_name_norm = normalize_channel_name(str(event_name))
             for ch in ctx.guild.text_channels:
-                if ch.name == channel_name:
+                ch_norm = normalize_channel_name(ch.name)
+                if event_name_norm in ch_norm:
                     game_channel = ch
                     break
         if game_channel:
