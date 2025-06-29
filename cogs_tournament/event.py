@@ -388,5 +388,152 @@ class Event(commands.Cog):
         except Exception as e:
             print(f"Error updating reactions: {e}")
 
+    @commands.command(name="announce", usage="<event_id> <announcement_text>", help="Send a tournament announcement to the event channel")
+    @commands.has_permissions(administrator=True)
+    async def announce(self, ctx, event_id: int, *, announcement_text: str):
+        """Send a manual tournament announcement to the event channel (Admin only)"""
+        if not await self.check_mod_channel(ctx):
+            return
+            
+        if event_id not in self.events:
+            await ctx.send(f"Event with ID `{event_id}` not found.")
+            return
+
+        event = self.events[event_id]
+        event_name = event['name']
+        
+        # Get event role for mention
+        event_role = None
+        role_id = event.get('role_id')
+        if role_id:
+            event_role = ctx.guild.get_role(role_id)
+        
+        # Send announcement to event channel
+        admin_cog = self.bot.get_cog('Admin')
+        if admin_cog:
+            event_channel_id = admin_cog.get_channel_id("event")
+            if event_channel_id:
+                event_channel = self.bot.get_channel(event_channel_id)
+                if event_channel:
+                    embed = discord.Embed(
+                        title=f"📢 Tournament Announcement: {event_name}",
+                        description=announcement_text,
+                        color=discord.Color.orange(),
+                        timestamp=discord.utils.utcnow()
+                    )
+                    embed.add_field(name="Event ID", value=str(event_id), inline=True)
+                    embed.add_field(name="Announced by", value=ctx.author.mention, inline=True)
+                    embed.set_footer(text=f"Tournament: {event_name}")
+                    
+                    # Mention the event role if it exists
+                    role_mention = f"{event_role.mention} " if event_role else ""
+                    await event_channel.send(f"{role_mention}📢 **TOURNAMENT ANNOUNCEMENT!** 📢", embed=embed)
+                    
+                    await ctx.send(f"✅ Announcement sent to {event_channel.mention}")
+                else:
+                    await ctx.send("❌ Event channel not found.")
+            else:
+                await ctx.send("❌ Event channel not configured. Use `dm.set_channel event #channel` first.")
+        else:
+            await ctx.send("❌ Admin cog not available.")
+
+    @commands.command(name="ban_announce", usage="<event_id> <@user> <reason>", help="Send a ban announcement for a tournament")
+    @commands.has_permissions(administrator=True)
+    async def ban_announce(self, ctx, event_id: int, user: discord.Member, *, reason: str = "No reason provided"):
+        """Send a ban announcement for a tournament (Admin only)"""
+        if not await self.check_mod_channel(ctx):
+            return
+            
+        if event_id not in self.events:
+            await ctx.send(f"Event with ID `{event_id}` not found.")
+            return
+
+        event = self.events[event_id]
+        event_name = event['name']
+        
+        # Get event role for mention
+        event_role = None
+        role_id = event.get('role_id')
+        if role_id:
+            event_role = ctx.guild.get_role(role_id)
+        
+        # Send ban announcement to event channel
+        admin_cog = self.bot.get_cog('Admin')
+        if admin_cog:
+            event_channel_id = admin_cog.get_channel_id("event")
+            if event_channel_id:
+                event_channel = self.bot.get_channel(event_channel_id)
+                if event_channel:
+                    embed = discord.Embed(
+                        title=f"🚫 Tournament Ban: {event_name}",
+                        description=f"**User:** {user.mention} (`{user}`)\n**Reason:** {reason}",
+                        color=discord.Color.red(),
+                        timestamp=discord.utils.utcnow()
+                    )
+                    embed.add_field(name="Event ID", value=str(event_id), inline=True)
+                    embed.add_field(name="Banned by", value=ctx.author.mention, inline=True)
+                    embed.set_footer(text=f"Tournament: {event_name}")
+                    
+                    # Mention the event role if it exists
+                    role_mention = f"{event_role.mention} " if event_role else ""
+                    await event_channel.send(f"{role_mention}🚫 **TOURNAMENT BAN!** 🚫", embed=embed)
+                    
+                    await ctx.send(f"✅ Ban announcement sent to {event_channel.mention}")
+                else:
+                    await ctx.send("❌ Event channel not found.")
+            else:
+                await ctx.send("❌ Event channel not configured. Use `dm.set_channel event #channel` first.")
+        else:
+            await ctx.send("❌ Admin cog not available.")
+
+    @commands.command(name="rule_announce", usage="<event_id> <rule_text>", help="Send a rule announcement for a tournament")
+    @commands.has_permissions(administrator=True)
+    async def rule_announce(self, ctx, event_id: int, *, rule_text: str):
+        """Send a rule announcement for a tournament (Admin only)"""
+        if not await self.check_mod_channel(ctx):
+            return
+            
+        if event_id not in self.events:
+            await ctx.send(f"Event with ID `{event_id}` not found.")
+            return
+
+        event = self.events[event_id]
+        event_name = event['name']
+        
+        # Get event role for mention
+        event_role = None
+        role_id = event.get('role_id')
+        if role_id:
+            event_role = ctx.guild.get_role(role_id)
+        
+        # Send rule announcement to event channel
+        admin_cog = self.bot.get_cog('Admin')
+        if admin_cog:
+            event_channel_id = admin_cog.get_channel_id("event")
+            if event_channel_id:
+                event_channel = self.bot.get_channel(event_channel_id)
+                if event_channel:
+                    embed = discord.Embed(
+                        title=f"📋 Tournament Rule Update: {event_name}",
+                        description=rule_text,
+                        color=discord.Color.blue(),
+                        timestamp=discord.utils.utcnow()
+                    )
+                    embed.add_field(name="Event ID", value=str(event_id), inline=True)
+                    embed.add_field(name="Updated by", value=ctx.author.mention, inline=True)
+                    embed.set_footer(text=f"Tournament: {event_name}")
+                    
+                    # Mention the event role if it exists
+                    role_mention = f"{event_role.mention} " if event_role else ""
+                    await event_channel.send(f"{role_mention}📋 **RULE UPDATE!** 📋", embed=embed)
+                    
+                    await ctx.send(f"✅ Rule announcement sent to {event_channel.mention}")
+                else:
+                    await ctx.send("❌ Event channel not found.")
+            else:
+                await ctx.send("❌ Event channel not configured. Use `dm.set_channel event #channel` first.")
+        else:
+            await ctx.send("❌ Admin cog not available.")
+
 async def setup(bot):
     await bot.add_cog(Event(bot)) 

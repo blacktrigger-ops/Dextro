@@ -176,6 +176,15 @@ class Admin(commands.Cog):
                 inline=False
             )
             embed.add_field(
+                name="📢 Tournament Announcements",
+                value=(
+                    "• `dm.announce <event_id> <text>` - Send general announcement\n"
+                    "• `dm.ban_announce <event_id> <@user> <reason>` - Announce tournament ban\n"
+                    "• `dm.rule_announce <event_id> <rule_text>` - Announce rule update"
+                ),
+                inline=False
+            )
+            embed.add_field(
                 name="👥 Section & Team Management",
                 value=(
                     "• `dm.create_section <event_id> (Section Name/Max Teams)` - Create section\n"
