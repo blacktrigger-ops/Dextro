@@ -134,7 +134,7 @@ class Team(commands.Cog):
         """Create an embed for a section that allows reaction-based team joining (Admin only)"""
         if not await self.check_mod_channel(ctx):
             return
-            
+        import database
         event_cog = self.bot.get_cog('Event')
         admin_cog = self.bot.get_cog('Admin')
         
@@ -143,12 +143,34 @@ class Team(commands.Cog):
             return
             
         event = event_cog.events.get(event_id)
-        if not event:
-            await ctx.send(f"Event with ID `{event_id}` not found.")
-            return
-            
-        if sect_name not in event.get('sections', {}):
-            await ctx.send(f"Section '**{sect_name}**' not found in event '**{event['name']}**'.")
+        section_found = False
+        section_data = None
+        # Check in memory first
+        if event and sect_name in event.get('sections', {}):
+            section_found = True
+            section_data = event['sections'][sect_name]
+        else:
+            # Fallback: check DB for section
+            sections = database.get_sections(event_id)
+            for section in sections:
+                section_id, db_sect_name, _ = section
+                if str(db_sect_name) == str(sect_name):
+                    section_found = True
+                    # Load teams from DB
+                    teams = database.get_teams(section_id)
+                    section_data = {'teams': {}}
+                    for team in teams:
+                        team_id, team_name, leader_id, max_members, emoji = team
+                        members = database.get_team_members_by_id(team_id)
+                        section_data['teams'][team_name] = {
+                            'emoji': emoji,
+                            'leader': f"<@{leader_id}>",
+                            'max_members': max_members,
+                            'members': [f"<@{uid}>" for uid in members]
+                        }
+                    break
+        if not section_found:
+            await ctx.send(f"Section '**{sect_name}**' not found in event ID `{event_id}`.")
             return
             
         team_channel_id = admin_cog.get_channel_id("team_channel")
@@ -161,8 +183,6 @@ class Team(commands.Cog):
             await ctx.send("Team channel not found.")
             return
             
-        section = event['sections'][sect_name]
-        
         # Create embed
         embed = discord.Embed(
             title=f"📋 {sect_name}",
@@ -170,7 +190,7 @@ class Team(commands.Cog):
             color=discord.Color.blue()
         )
         
-        teams = section.get('teams', {})
+        teams = section_data.get('teams', {}) if section_data else {}
         if not teams:
             embed.description = "No teams created yet."
         else:
@@ -500,29 +520,40 @@ class Team(commands.Cog):
         """Delete a team from a section (Admin only)"""
         if not await self.check_mod_channel(ctx):
             return
-            
+        import database
         event_cog = self.bot.get_cog('Event')
-        if not event_cog or event_id not in event_cog.events:
-            await ctx.send(f"Event with ID `{event_id}` not found.")
+        event = event_cog.events.get(event_id) if event_cog else None
+        team_found = False
+        # Check in memory first
+        if event and sect_name in event.get('sections', {}) and team_name in event['sections'][sect_name].get('teams', {}):
+            team_found = True
+        else:
+            # Fallback: check DB for team
+            sections = database.get_sections(event_id)
+            for section in sections:
+                section_id, db_sect_name, _ = section
+                if str(db_sect_name) == str(sect_name):
+                    teams = database.get_teams(section_id)
+                    for team in teams:
+                        team_id, db_team_name, _, _, _ = team
+                        if str(db_team_name) == str(team_name):
+                            team_found = True
+                            # Remove from DB
+                            database.remove_team(team_id)
+                            await ctx.send(f"Team '**{team_name}**' has been deleted from section '**{sect_name}**' in event ID `{event_id}` (DB fallback).")
+                            # Optionally, reload event into memory
+                            if event_cog:
+                                await event_cog.cog_load()
+                            return
+        if not team_found:
+            await ctx.send(f"Team '**{team_name}**' not found in section '**{sect_name}**' of event ID `{event_id}`.")
             return
-
-        event = event_cog.events[event_id]
-        if sect_name not in event.get('sections', {}):
-            await ctx.send(f"Section '**{sect_name}**' not found in event '**{event['name']}**'.")
-            return
-
-        section = event['sections'][sect_name]
-        if team_name not in section.get('teams', {}):
-            await ctx.send(f"Team '**{team_name}**' not found in section '**{sect_name}**'.")
-            return
-
-        # Remove from memory
-        del section['teams'][team_name]
-
-        # Update section embed if it exists
-        await self.update_section_embed(event_id, sect_name)
-
-        await ctx.send(f"Team '**{team_name}**' has been deleted from section '**{sect_name}**'.")
+        # Remove from memory if event is in memory
+        if event:
+            del event['sections'][sect_name]['teams'][team_name]
+            # Update section embed if it exists
+            await self.update_section_embed(event_id, sect_name)
+            await ctx.send(f"Team '**{team_name}**' has been deleted from section '**{sect_name}**'.")
 
     @commands.command(name="delete_section", usage="<event_id> <sect_name>")
     @commands.has_permissions(administrator=True)
@@ -571,28 +602,41 @@ class Team(commands.Cog):
         """Disqualify a team from an event (Admin only)"""
         if not await self.check_mod_channel(ctx):
             return
-            
+        import database
         event_cog = self.bot.get_cog('Event')
-        if not event_cog or event_id not in event_cog.events:
-            await ctx.send(f"Event with ID `{event_id}` not found.")
-            return
-
-        event = event_cog.events[event_id]
+        event = event_cog.events.get(event_id) if event_cog else None
         found_team = None
         found_section = None
-
-        # Find the team
-        for sect_name, section in event.get('sections', {}).items():
-            if team_name in section.get('teams', {}):
-                found_team = section['teams'][team_name]
-                found_section = sect_name
-                break
-
+        # Check in memory first
+        if event:
+            for sect_name, section in event.get('sections', {}).items():
+                if team_name in section.get('teams', {}):
+                    found_team = section['teams'][team_name]
+                    found_section = sect_name
+                    break
+        else:
+            # Fallback: check DB for team
+            sections = database.get_sections(event_id)
+            for section in sections:
+                section_id, db_sect_name, _ = section
+                teams = database.get_teams(section_id)
+                for team in teams:
+                    team_id, db_team_name, _, _, _ = team
+                    if str(db_team_name) == str(team_name):
+                        found_section = str(db_sect_name)
+                        # Remove all team members from DB
+                        members = database.get_team_members_by_id(team_id)
+                        for member_id in members:
+                            database.remove_team_member(team_id, member_id)
+                        await ctx.send(f"Team '**{team_name}**' has been disqualified from event ID `{event_id}` (DB fallback).\nReason: {reason}")
+                        # Optionally, reload event into memory
+                        if event_cog:
+                            await event_cog.cog_load()
+                        return
         if not found_team:
-            await ctx.send(f"Team '**{team_name}**' not found in event '**{event['name']}**'.")
+            await ctx.send(f"Team '**{team_name}**' not found in event ID `{event_id}`.")
             return
-
-        # Remove all members from the team
+        # Remove all members from the team (memory)
         members_to_remove = found_team.get('members', []).copy()
         for member_mention in members_to_remove:
             # Extract user ID from mention
@@ -601,19 +645,17 @@ class Team(commands.Cog):
                 # Remove from memory
                 if member_mention in found_team['members']:
                     found_team['members'].remove(member_mention)
-
         # Send notification to all removed members
         for member_mention in members_to_remove:
             if member_mention.startswith('<@') and member_mention.endswith('>'):
                 user_id = int(member_mention.strip('<@!>'))
                 user = ctx.guild.get_member(user_id)
-                if user:
+                if user and event:
                     await self.send_join_notifications(user, team_name, found_section, event['name'], "disqualified", "admin")
-
         # Update section embed
         await self.update_section_embed(event_id, found_section)
-
-        await ctx.send(f"Team '**{team_name}**' has been disqualified from event '**{event['name']}**'.\nReason: {reason}")
+        if event:
+            await ctx.send(f"Team '**{team_name}**' has been disqualified from event '**{event['name']}**'.\nReason: {reason}")
 
     @commands.command(name="disqualify_member", usage="<event_id> <@member> [reason]")
     @commands.has_permissions(administrator=True)
@@ -621,64 +663,101 @@ class Team(commands.Cog):
         """Disqualify a member from all teams in an event (Admin only)"""
         if not await self.check_mod_channel(ctx):
             return
-            
+        import database
         # Extract user ID from mention
         if not member_mention.startswith('<@') or not member_mention.endswith('>'):
             await ctx.send("Please mention the member to disqualify.")
             return
-
         user_id = int(member_mention.strip('<@!>'))
         user = ctx.guild.get_member(user_id)
         if not user:
             await ctx.send("User not found in this server.")
             return
-
         event_cog = self.bot.get_cog('Event')
-        if not event_cog or event_id not in event_cog.events:
-            await ctx.send(f"Event with ID `{event_id}` not found.")
-            return
-
-        event = event_cog.events[event_id]
+        event = event_cog.events.get(event_id) if event_cog else None
         removed_teams = []
-
-        # Remove user from all teams in the event
-        for sect_name, section in event.get('sections', {}).items():
-            for team_name, team_data in section.get('teams', {}).items():
-                if member_mention in team_data.get('members', []):
-                    # Remove from memory
-                    team_data['members'].remove(member_mention)
-                    removed_teams.append((team_name, sect_name))
-
+        # Check in memory first
+        if event:
+            # Remove user from all teams in the event
+            for sect_name, section in event.get('sections', {}).items():
+                for team_name, team_data in section.get('teams', {}).items():
+                    if member_mention in team_data.get('members', []):
+                        # Remove from memory
+                        team_data['members'].remove(member_mention)
+                        removed_teams.append((team_name, sect_name))
+        else:
+            # Fallback: check DB for user participation
+            sections = database.get_sections(event_id)
+            for section in sections:
+                section_id, db_sect_name, _ = section
+                teams = database.get_teams(section_id)
+                for team in teams:
+                    team_id, db_team_name, _, _, _ = team
+                    members = database.get_team_members_by_id(team_id)
+                    if user_id in members:
+                        # Remove from DB
+                        database.remove_team_member(team_id, user_id)
+                        removed_teams.append((str(db_team_name), str(db_sect_name)))
+            if removed_teams:
+                await ctx.send(f"User {user.mention} has been disqualified from the following teams in event ID `{event_id}` (DB fallback): {', '.join([f"'{team_name}' ({sect_name})" for team_name, sect_name in removed_teams])}\nReason: {reason}")
+                # Optionally, reload event into memory
+                if event_cog:
+                    await event_cog.cog_load()
+                return
         if not removed_teams:
-            await ctx.send(f"User {user.mention} is not a member of any team in event '**{event['name']}**'.")
+            await ctx.send(f"User {user.mention} is not a member of any team in event ID `{event_id}`.")
             return
-
         # Send notification to the user
         for team_name, sect_name in removed_teams:
-            await self.send_join_notifications(user, team_name, sect_name, event['name'], "disqualified", "admin")
-
+            if event:
+                await self.send_join_notifications(user, team_name, sect_name, event['name'], "disqualified", "admin")
         # Update all affected section embeds
         affected_sections = set(sect_name for _, sect_name in removed_teams)
         for sect_name in affected_sections:
             await self.update_section_embed(event_id, sect_name)
-
         teams_list = ", ".join([f"'{team_name}' ({sect_name})" for team_name, sect_name in removed_teams])
-        await ctx.send(f"User {user.mention} has been disqualified from the following teams in event '**{event['name']}**': {teams_list}\nReason: {reason}")
+        if event:
+            await ctx.send(f"User {user.mention} has been disqualified from the following teams in event '**{event['name']}**': {teams_list}\nReason: {reason}")
 
     @commands.command(name="list_teams", usage="<event_id>", help="List all teams for an event, with their members.")
     async def list_teams(self, ctx, event_id: int):
         """List all teams for an event, with their members."""
         if not await self.check_mod_channel(ctx):
             return
-            
+        import database
         event_cog = self.bot.get_cog('Event')
-        if not event_cog or event_id not in event_cog.events:
-            await ctx.send(f"Event with ID `{event_id}` not found.")
+        event = event_cog.events.get(event_id) if event_cog else None
+        event_name = None
+        # Check in memory first
+        if event:
+            event_name = event['name']
+        else:
+            # Fallback: check DB for event
+            db_event = database.get_event(event_id)
+            if not db_event:
+                await ctx.send(f"Event with ID `{event_id}` not found.")
+                return
+            event_name = db_event[2]  # type: ignore
+            # Load teams from DB for display
+            embed = discord.Embed(title=f"Teams for {event_name}", color=discord.Color.blue())
+            sections = database.get_sections(event_id)
+            for section in sections:
+                section_id, sect_name, _ = section
+                teams_text = ""
+                teams = database.get_teams(section_id)
+                for team in teams:
+                    team_id, team_name, _, max_members, _ = team
+                    members = database.get_team_members_by_id(team_id)
+                    member_mentions = [f"<@{uid}>" for uid in members]
+                    teams_text += f"**{team_name}** ({len(members)}/{max_members}): {', '.join(member_mentions) if member_mentions else 'No members'}\n"
+                if teams_text:
+                    embed.add_field(name=f"📋 {sect_name}", value=teams_text, inline=False)
+            if not embed.fields:
+                embed.description = "No teams found for this event."
+            await ctx.send(embed=embed)
             return
-
-        event = event_cog.events[event_id]
-        embed = discord.Embed(title=f"Teams for {event['name']}", color=discord.Color.blue())
-
+        # Display teams from memory
+        embed = discord.Embed(title=f"Teams for {event_name}", color=discord.Color.blue())
         for sect_name, section in event.get('sections', {}).items():
             teams_text = ""
             for team_name, team_data in section.get('teams', {}).items():
@@ -686,7 +765,6 @@ class Team(commands.Cog):
                 teams_text += f"**{team_name}** ({len(members)}/{team_data.get('max_members', 0)}): {', '.join(members) if members else 'No members'}\n"
             if teams_text:
                 embed.add_field(name=f"📋 {sect_name}", value=teams_text, inline=False)
-
         if not embed.fields:
             embed.description = "No teams found for this event."
         await ctx.send(embed=embed)

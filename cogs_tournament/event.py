@@ -445,47 +445,60 @@ class Event(commands.Cog):
         if not await self.check_mod_channel(ctx):
             return
             
-        if event_id not in self.events:
-            await ctx.send(f"Event with ID `{event_id}` not found.")
-            return
-
-        event = self.events[event_id]
-        event_name = event['name']
+        event = self.events.get(event_id)
+        event_name = None
+        role_id = None
+        # Check in memory first
+        if event:
+            event_name = event['name']
+            role_id = event.get('role_id')
+        else:
+            # Fallback: check DB for event
+            db_event = database.get_event(event_id)
+            if not db_event:
+                await ctx.send(f"Event with ID `{event_id}` not found.")
+                return
+            event_name = db_event[2]  # type: ignore
+            # Note: role_id not stored in DB, so we can't get it from fallback
         
         # Get event role for mention
         event_role = None
-        role_id = event.get('role_id')
         if role_id:
             event_role = ctx.guild.get_role(role_id)
         
         # Send announcement to event channel
         admin_cog = self.bot.get_cog('Admin')
-        if admin_cog:
-            event_channel_id = admin_cog.get_channel_id("event")
-            if event_channel_id:
-                event_channel = self.bot.get_channel(event_channel_id)
-                if event_channel:
-                    embed = discord.Embed(
-                        title=f"📢 Tournament Announcement: {event_name}",
-                        description=announcement_text,
-                        color=discord.Color.orange(),
-                        timestamp=discord.utils.utcnow()
-                    )
-                    embed.add_field(name="Event ID", value=str(event_id), inline=True)
-                    embed.add_field(name="Announced by", value=ctx.author.mention, inline=True)
-                    embed.set_footer(text=f"Tournament: {event_name}")
-                    
-                    # Mention the event role if it exists
-                    role_mention = f"{event_role.mention} " if event_role else ""
-                    await event_channel.send(f"{role_mention}📢 **TOURNAMENT ANNOUNCEMENT!** 📢", embed=embed)
-                    
-                    await ctx.send(f"✅ Announcement sent to {event_channel.mention}")
-                else:
-                    await ctx.send("❌ Event channel not found.")
-            else:
-                await ctx.send("❌ Event channel not configured. Use `dm.set_channel event #channel` first.")
+        if not admin_cog:
+            await ctx.send("Admin cog not available.")
+            return
+            
+        event_channel_id = admin_cog.get_channel_id("event")
+        if not event_channel_id:
+            await ctx.send("Event channel not configured. Use `dm.set_channel event #channel` first.")
+            return
+            
+        event_channel = self.bot.get_channel(event_channel_id)
+        if not event_channel:
+            await ctx.send("Event channel not found.")
+            return
+            
+        # Create announcement embed
+        embed = discord.Embed(
+            title=f"📢 Tournament Announcement",
+            description=announcement_text,
+            color=discord.Color.orange(),
+            timestamp=discord.utils.utcnow()
+        )
+        embed.add_field(name="Event", value=event_name, inline=True)
+        embed.add_field(name="Announced by", value=ctx.author.mention, inline=True)
+        
+        # Send with role mention if available
+        if event_role:
+            await event_channel.send(content=f"{event_role.mention}", embed=embed)
         else:
-            await ctx.send("❌ Admin cog not available.")
+            await event_channel.send(embed=embed)
+            
+        await ctx.send(f"✅ Announcement sent to {event_channel.mention}")
 
     async def cog_load(self):
         # Load all events, sections, and teams from the database for all guilds
