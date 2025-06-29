@@ -53,17 +53,23 @@ class Stats(commands.Cog):
             embed.add_field(name="Teams Created", value=str(teams), inline=True)
             embed.add_field(name="Members Joined", value=str(members), inline=True)
         # Top 5 users by command usage
-        with database.get_db() as conn:
-            c = conn.cursor()
-            c.execute('''SELECT user_id, SUM(count) as total FROM user_usage WHERE guild_id = ? GROUP BY user_id ORDER BY total DESC LIMIT 5''', (ctx.guild.id,))
-            top_users = c.fetchall()
-        if top_users:
-            desc = ""
-            for uid, total in top_users:
-                member = ctx.guild.get_member(uid)
-                name = member.display_name if member else f"User {uid}"
-                desc += f"**{name}**: {total} commands\n"
-            embed.add_field(name="Top Users", value=desc, inline=False)
+        try:
+            with database.get_db() as conn:
+                c = conn.cursor()
+                if database.USE_MYSQL:
+                    c.execute('''SELECT user_id, SUM(count) as total FROM user_usage WHERE guild_id = %s GROUP BY user_id ORDER BY total DESC LIMIT 5''', (ctx.guild.id,))
+                else:
+                    c.execute('''SELECT user_id, SUM(count) as total FROM user_usage WHERE guild_id = ? GROUP BY user_id ORDER BY total DESC LIMIT 5''', (ctx.guild.id,))
+                top_users = c.fetchall()
+            if top_users:
+                desc = ""
+                for uid, total in top_users:
+                    member = ctx.guild.get_member(uid)
+                    name = member.display_name if member else f"User {uid}"
+                    desc += f"**{name}**: {total} commands\n"
+                embed.add_field(name="Top Users", value=desc, inline=False)
+        except Exception as e:
+            print(f"Error getting top users: {e}")
         await ctx.send(embed=embed)
 
     @commands.command(name="profile", usage="[@user]", help="Show user profile: events, rank, team, etc.")

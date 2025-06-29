@@ -48,23 +48,65 @@ class Admin(commands.Cog):
     @commands.command(name="set_channel", usage="<type> <channel>")
     @commands.has_permissions(administrator=True)
     async def set_channel(self, ctx, channel_type: str, channel: discord.TextChannel):
-        """Set a channel for a specific purpose (mod, event, team, log, etc)."""
-        set_channel(ctx.guild.id, channel_type.lower(), channel.id)
-        await ctx.send(f"Set {channel_type} channel to {channel.mention}.")
+        """Set a channel for a specific purpose.
+        
+        Available types: mod, event, team, log, join, game
+        
+        Examples:
+        - dm.set_channel mod #moderation
+        - dm.set_channel event #events
+        - dm.set_channel team #teams
+        - dm.set_channel log #bot-logs
+        - dm.set_channel join #team-join
+        - dm.set_channel game #game-chat
+        """
+        channel_type = channel_type.lower()
+        valid_types = ["mod", "event", "team", "log", "join", "game"]
+        
+        if channel_type not in valid_types:
+            await ctx.send(f"Invalid channel type. Available types: {', '.join(valid_types)}")
+            return
+            
+        set_channel(ctx.guild.id, channel_type, channel.id)
+        await ctx.send(f"✅ Set **{channel_type}** channel to {channel.mention}")
         details = f"Set `{channel_type}` channel to {channel.mention} ({channel.id})"
         await self.log_mod_action(ctx, "set_channel", details)
+
+    @commands.command(name="clear_channel", usage="<type>")
+    @commands.has_permissions(administrator=True)
+    async def clear_channel(self, ctx, channel_type: str):
+        """Clear a channel configuration.
+        
+        Available types: mod, event, team, log, join, game
+        
+        Examples:
+        - dm.clear_channel mod
+        - dm.clear_channel event
+        """
+        channel_type = channel_type.lower()
+        valid_types = ["mod", "event", "team", "log", "join", "game"]
+        
+        if channel_type not in valid_types:
+            await ctx.send(f"Invalid channel type. Available types: {', '.join(valid_types)}")
+            return
+            
+        # Set to None to clear the channel
+        set_channel(ctx.guild.id, channel_type, None)
+        await ctx.send(f"✅ Cleared **{channel_type}** channel configuration")
+        details = f"Cleared `{channel_type}` channel configuration"
+        await self.log_mod_action(ctx, "clear_channel", details)
 
     @commands.command(name="show_channels")
     @commands.has_permissions(administrator=True)
     async def show_channels(self, ctx):
         """Show all configured channels for this server."""
-        types = ["mod", "event", "team", "log"]
+        types = ["mod", "event", "team", "log", "join", "game"]
         desc = ""
         for t in types:
             cid = get_channel(ctx.guild.id, t)
             if cid:
                 ch = ctx.guild.get_channel(cid)
-                desc += f"**{t.capitalize()}**: {ch.mention if ch else cid}\n"
+                desc += f"**{t.capitalize()}**: {ch.mention if ch else f'<#{cid}>'}\n"
             else:
                 desc += f"**{t.capitalize()}**: Not set\n"
         await ctx.send(f"Configured channels:\n{desc}")

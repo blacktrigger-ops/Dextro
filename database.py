@@ -338,16 +338,30 @@ def setup_db():
 def set_channel(guild_id, channel_type, channel_id):
     with get_db() as conn:
         c = conn.cursor()
-        if USE_MYSQL:
-            c.execute(
-                "REPLACE INTO channels (guild_id, channel_type, channel_id) VALUES (%s, %s, %s)",
-                (guild_id, channel_type, channel_id)
-            )
+        if channel_id is None:
+            # Delete the channel configuration
+            if USE_MYSQL:
+                c.execute(
+                    "DELETE FROM channels WHERE guild_id=%s AND channel_type=%s",
+                    (guild_id, channel_type)
+                )
+            else:
+                c.execute(
+                    "DELETE FROM channels WHERE guild_id=? AND channel_type=?",
+                    (guild_id, channel_type)
+                )
         else:
-            c.execute(
-                "INSERT OR REPLACE INTO channels (guild_id, channel_type, channel_id) VALUES (?, ?, ?)",
-                (guild_id, channel_type, channel_id)
-            )
+            # Set the channel configuration
+            if USE_MYSQL:
+                c.execute(
+                    "REPLACE INTO channels (guild_id, channel_type, channel_id) VALUES (%s, %s, %s)",
+                    (guild_id, channel_type, channel_id)
+                )
+            else:
+                c.execute(
+                    "INSERT OR REPLACE INTO channels (guild_id, channel_type, channel_id) VALUES (?, ?, ?)",
+                    (guild_id, channel_type, channel_id)
+                )
         conn.commit()
 
 def get_channel(guild_id, channel_type):
