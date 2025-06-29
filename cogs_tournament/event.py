@@ -142,41 +142,67 @@ class Event(commands.Cog):
     @commands.command(name="close_event", usage="<event_id>")
     @commands.has_permissions(administrator=True)
     async def close_event(self, ctx, event_id: int):
-        """Hard deletes everything related to an event (Admin only)"""
+        """Hard deletes everything related to an event (Admin only, DB + memory)"""
         if not await self.check_mod_channel(ctx):
             return
 
         admin_cog = self.bot.get_cog('Admin')
         team_cog = self.bot.get_cog('Team')
         leaderboard_cog = self.bot.get_cog('Leaderboard')
-        
+
         if event_id not in self.events:
             await ctx.send(f"Event with ID `{event_id}` not found.")
             return
 
         event = self.events[event_id]
         event_name = event['name']
-        
-        # Delete all section embeds
+
+        # Delete all section embeds (memory)
         if team_cog:
             for sect_name in event.get('sections', {}).keys():
                 section_key = f"{event_id}_{sect_name}"
                 if section_key in team_cog.section_embeds:
                     del team_cog.section_embeds[section_key]
-        
-        # Delete leaderboard embed
-        if leaderboard_cog and event_id in leaderboard_cog.leaderboard_embeds:
+
+        # Delete leaderboard embed (memory)
+        if leaderboard_cog and event_id in getattr(leaderboard_cog, 'leaderboard_embeds', {}):
             del leaderboard_cog.leaderboard_embeds[event_id]
-        
-        # Delete scores
-        if leaderboard_cog and event_id in leaderboard_cog.scores:
+        if leaderboard_cog and event_id in getattr(leaderboard_cog, 'scores', {}):
             del leaderboard_cog.scores[event_id]
-        
-        # Delete the event
+
+        # Remove from DB (event, sections, teams, team_members, leaderboard, user_event_participation, team_event_stats)
+        try:
+            with database.get_db() as conn:
+                c = conn.cursor()
+                c.execute('DELETE FROM leaderboard WHERE event_id = %s', (event_id,))
+                c.execute('DELETE FROM team_event_stats WHERE event_id = %s', (event_id,))
+                c.execute('DELETE FROM user_event_participation WHERE event_id = %s', (event_id,))
+                # Remove teams and members
+                c.execute('SELECT section_id FROM sections WHERE event_id = %s', (event_id,))
+                # IDs in these tables are always integers; suppress linter warning if needed
+                section_rows = c.fetchall()
+                section_ids = [int(row[0]) for row in section_rows]  # type: ignore
+                for section_id in section_ids:
+                    c.execute('SELECT team_id FROM teams WHERE section_id = %s', (int(section_id),))
+                    team_rows = c.fetchall()
+                    team_ids = [int(row[0]) for row in team_rows]  # type: ignore
+                    for team_id in team_ids:
+                        c.execute('DELETE FROM team_members WHERE team_id = %s', (int(team_id),))
+                    c.execute('DELETE FROM teams WHERE section_id = %s', (int(section_id),))
+                c.execute('DELETE FROM sections WHERE event_id = %s', (event_id,))
+                c.execute('DELETE FROM events WHERE event_id = %s', (event_id,))
+                conn.commit()
+        except Exception as e:
+            await ctx.send(f"⚠️ Error deleting event from database: {e}")
+            return
+
+        # Delete the event (memory)
         del self.events[event_id]
-        
+        if hasattr(self, 'event_embeds') and event_id in self.event_embeds:
+            del self.event_embeds[event_id]
+
         # Send log message
-        log_channel_id = admin_cog.get_channel_id("log_channel") if admin_cog else None
+        log_channel_id = admin_cog.get_channel_id("log", ctx.guild.id) if admin_cog else None
         if log_channel_id:
             log_channel = self.bot.get_channel(log_channel_id)
             if log_channel:
@@ -188,87 +214,83 @@ class Event(commands.Cog):
                 )
                 embed.set_footer(text=f"Closed by {ctx.author.name}")
                 await log_channel.send(embed=embed)
-        
+
         await ctx.send(f"Event '**{event_name}**' has been permanently closed and all related data deleted.")
 
     @commands.command(name="end_event", usage="<event_id> [event_role]")
     @commands.has_permissions(administrator=True)
     async def end_event(self, ctx, event_id: int, *, event_role: str = ""):
-        """Declares winners and tags event role members, then resets leaderboard (Admin only)"""
+        """Declares winners, tags event role, resets leaderboard, logs, and closes event (Admin only)"""
         if not await self.check_mod_channel(ctx):
             return
-            
+
         admin_cog = self.bot.get_cog('Admin')
         leaderboard_cog = self.bot.get_cog('Leaderboard')
-        
+
         if event_id not in self.events:
             await ctx.send(f"Event with ID `{event_id}` not found.")
             return
 
         event = self.events[event_id]
         event_name = event['name']
-        
+
         # Get leaderboard data
         event_scores = {}
-        if leaderboard_cog and event_id in leaderboard_cog.scores:
+        if leaderboard_cog and event_id in getattr(leaderboard_cog, 'scores', {}):
             event_scores = leaderboard_cog.scores[event_id].copy()
-        
+
         if not event_scores:
             await ctx.send(f"No scores recorded for event '**{event_name}**'. Cannot declare winners.")
             return
-        
+
         # Sort teams by score
         sorted_teams = sorted(event_scores.items(), key=lambda x: x[1], reverse=True)
-        
+
         # Create winners embed
         embed = discord.Embed(
             title=f"🏆 Event Results - {event_name}",
             color=discord.Color.gold()
         )
-        
+
         winners = []
         for i, (team_name, score) in enumerate(sorted_teams[:3], 1):  # Top 3
             team_details = leaderboard_cog.get_team_details(event_id, team_name) if leaderboard_cog else None
-            
-            if i == 1:
-                medal = "🥇"
-                winners.append(f"**1st Place:** {team_name} ({score} points)")
-            elif i == 2:
-                medal = "🥈"
-                winners.append(f"**2nd Place:** {team_name} ({score} points)")
-            elif i == 3:
-                medal = "🥉"
-                winners.append(f"**3rd Place:** {team_name} ({score} points)")
-            
+            medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉"
+            winners.append(f"**{i}st Place:** {team_name} ({score} points)" if i == 1 else f"**{i}nd Place:** {team_name} ({score} points)" if i == 2 else f"**{i}rd Place:** {team_name} ({score} points)")
             if team_details:
                 embed.add_field(
                     name=f"{medal} {team_name}",
                     value=f"**Score:** {score}\n**Section:** {team_details['section']}\n**Leader:** {team_details['leader']}",
                     inline=False
                 )
-        
+
         embed.description = "\n".join(winners)
         embed.set_footer(text=f"Event ended by {ctx.author.name}")
-        
+
         # Send to event channel
-        event_channel_id = admin_cog.get_channel_id("event_channel") if admin_cog else None
+        event_channel_id = admin_cog.get_channel_id("event", ctx.guild.id) if admin_cog else None
         if event_channel_id:
             event_channel = self.bot.get_channel(event_channel_id)
             if event_channel:
                 # Tag event role if provided
-                role_mention = ""
-                if event_role:
-                    role_mention = f"{event_role} "
-                
+                role_mention = f"{event_role} " if event_role else ""
                 await event_channel.send(f"{role_mention}🏆 **EVENT ENDED!** 🏆", embed=embed)
-        
-        # Reset leaderboard
-        if leaderboard_cog and event_id in leaderboard_cog.scores:
+
+        # Reset leaderboard (memory and DB)
+        if leaderboard_cog and event_id in getattr(leaderboard_cog, 'scores', {}):
             leaderboard_cog.scores[event_id] = {}
             await leaderboard_cog.update_leaderboard_embed(event_id)
-        
+        try:
+            with database.get_db() as conn:
+                c = conn.cursor()
+                c.execute('DELETE FROM leaderboard WHERE event_id = %s', (event_id,))
+                c.execute('DELETE FROM team_event_stats WHERE event_id = %s', (event_id,))
+                conn.commit()
+        except Exception as e:
+            await ctx.send(f"⚠️ Error resetting leaderboard in database: {e}")
+
         # Send log message
-        log_channel_id = admin_cog.get_channel_id("log_channel") if admin_cog else None
+        log_channel_id = admin_cog.get_channel_id("log", ctx.guild.id) if admin_cog else None
         if log_channel_id:
             log_channel = self.bot.get_channel(log_channel_id)
             if log_channel:
@@ -280,7 +302,7 @@ class Event(commands.Cog):
                 )
                 log_embed.set_footer(text=f"Ended by {ctx.author.name}")
                 await log_channel.send(embed=log_embed)
-        
+
         await ctx.send(f"Event '**{event_name}**' has ended! Winners have been declared and leaderboard has been reset.")
 
     async def update_event_embed(self, event_id):
