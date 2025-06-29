@@ -171,5 +171,4 @@ class DefinitionCog(commands.Cog):
         await ctx.send(f"Definition #{serial} for **{title}** deleted.")
 
 async def setup(bot):
-    print("DefinitionCog setup called")
     await bot.add_cog(DefinitionCog(bot)) 

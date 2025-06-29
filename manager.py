@@ -37,18 +37,20 @@ async def reload_cogs(bot, mode):
         print(f"Loading extension: {cog}")
         await bot.load_extension(cog)
 
+class ManagerBot(MyBot):
+    async def setup_hook(self):
+        """Called when the bot is starting up."""
+        mode = config.get_mode()
+        await reload_cogs(self, mode)
+    
+    async def reload_cogs(self, mode):
+        """Reload cogs for a specific mode."""
+        await reload_cogs(self, mode)
 
 def main():
-    bot = MyBot(
+    bot = ManagerBot(
         command_prefix='dm.',
         intents=discord.Intents.all(),
         help_command=None
     )
-
-    async def setup():
-        mode = config.get_mode()
-        await reload_cogs(bot, mode)
-
-    bot.setup_hook = setup
-    bot.reload_cogs = lambda mode: reload_cogs(bot, mode)  # Attach for admin command
     bot.run(config.DISCORD_TOKEN) 
