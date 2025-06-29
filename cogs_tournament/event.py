@@ -22,24 +22,24 @@ class Event(commands.Cog):
     async def create_event(self, ctx, *, event_info: str):
         if not await self.check_mod_channel(ctx):
             return
-            
         print('[DEBUG] create_event called')
-        import re
         match = re.match(r"\(([^/]+)/([0-9]+)\)", event_info.strip())
         if not match:
             await ctx.send("Invalid format! Use: (Event Name/Max Sections)")
             return
         name, max_sections = match.group(1).strip(), int(match.group(2))
+        # Duplicate event name check
+        existing_events = database.list_events(ctx.guild.id)
+        for eid, ename, _ in existing_events:
+            if isinstance(ename, str) and ename.lower() == name.lower():
+                await ctx.send(f"❌ An event with the name **{name}** already exists (ID: {eid}).")
+                return
         event_id = database.add_event(ctx.guild.id, name, max_sections)
-        
-        # Store event data in memory
         self.events[event_id] = {
             'name': name,
             'max_sections': max_sections,
             'sections': {}
         }
-        
-        # Create event role
         role_name = f"🏆 {name}"
         try:
             event_role = await ctx.guild.create_role(
@@ -51,12 +51,9 @@ class Event(commands.Cog):
         except Exception as e:
             await ctx.send(f"⚠️ Could not create event role: {e}")
             event_role = None
-        
-        # Create game channel
         admin_cog = self.bot.get_cog('Admin')
         game_channel = None
         if admin_cog:
-            # Get the category of the mod channel to create game channel in same category
             mod_channel_id = admin_cog.get_channel_id("mod", ctx.guild.id)
             if mod_channel_id:
                 mod_channel = ctx.guild.get_channel(mod_channel_id)
@@ -68,8 +65,6 @@ class Event(commands.Cog):
                             reason=f"Auto-created game channel for tournament: {name}"
                         )
                         self.events[event_id]['game_channel_id'] = game_channel.id
-                        
-                        # Set permissions for the game channel
                         if event_role:
                             await game_channel.set_permissions(event_role, 
                                 read_messages=True, 
@@ -83,10 +78,8 @@ class Event(commands.Cog):
                         )
                     except Exception as e:
                         await ctx.send(f"⚠️ Could not create game channel: {e}")
-        
-        # Send announcement to event channel
         if admin_cog:
-            event_channel_id = admin_cog.get_channel_id("event")
+            event_channel_id = admin_cog.get_channel_id("event", ctx.guild.id)
             if event_channel_id:
                 event_channel = self.bot.get_channel(event_channel_id)
                 if event_channel:
@@ -98,22 +91,15 @@ class Event(commands.Cog):
                     embed.add_field(name="Event ID", value=str(event_id), inline=True)
                     embed.add_field(name="Max Sections", value=str(max_sections), inline=True)
                     embed.add_field(name="Status", value="🟡 Open for Registration", inline=True)
-                    
                     if event_role:
                         embed.add_field(name="Event Role", value=f"{event_role.mention}\n*Join teams to get this role automatically*", inline=False)
-                    
                     if game_channel:
                         embed.add_field(name="Game Channel", value=f"{game_channel.mention}\n*Only participants can access*", inline=False)
-                    
                     embed.add_field(name="How to Join", value="React to the join embed in the join channel to join teams!", inline=False)
-                    
-                    # Mention the event role if it exists
                     role_mention = f"{event_role.mention} " if event_role else ""
                     await event_channel.send(f"{role_mention}🎯 **NEW TOURNAMENT!** 🎯", embed=embed)
-        
-        # Create embed in join channel
         if admin_cog:
-            join_channel_id = admin_cog.get_channel_id("join")
+            join_channel_id = admin_cog.get_channel_id("join", ctx.guild.id)
             if join_channel_id:
                 join_channel = self.bot.get_channel(join_channel_id)
                 if join_channel:
@@ -125,14 +111,10 @@ class Event(commands.Cog):
                     embed.add_field(name="Event ID", value=str(event_id), inline=True)
                     embed.add_field(name="Max Sections", value=str(max_sections), inline=True)
                     embed.add_field(name="Status", value="🟡 Open for Registration", inline=True)
-                    
                     embed_message = await join_channel.send(embed=embed)
-                    
-                    # Store the embed message ID
                     if not hasattr(self, 'event_embeds'):
                         self.event_embeds = {}
                     self.event_embeds[event_id] = embed_message.id
-                    
                     await ctx.send(f"✅ Event created: **{name}** (ID: `{event_id}`)\n📋 Join embed posted in {join_channel.mention}")
                 else:
                     await ctx.send(f"Event created: **{name}** (ID: `{event_id}`), Max Sections: {max_sections}\n⚠️ Join channel not found.")
