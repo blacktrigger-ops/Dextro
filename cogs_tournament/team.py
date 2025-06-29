@@ -119,6 +119,77 @@ class Team(commands.Cog):
         except Exception:
             pass
 
+    @commands.command(name="create_section_embed", usage="<event_id> <sect_name>")
+    @commands.has_permissions(administrator=True)
+    async def create_section_embed(self, ctx, event_id: int, sect_name: str):
+        """Create an embed for a section that allows reaction-based team joining (Admin only)"""
+        event_cog = self.bot.get_cog('Event')
+        admin_cog = self.bot.get_cog('Admin')
+        
+        if not event_cog or not admin_cog:
+            await ctx.send("Required cogs not available.")
+            return
+            
+        event = event_cog.events.get(event_id)
+        if not event:
+            await ctx.send(f"Event with ID `{event_id}` not found.")
+            return
+            
+        if sect_name not in event.get('sections', {}):
+            await ctx.send(f"Section '**{sect_name}**' not found in event '**{event['name']}**'.")
+            return
+            
+        team_channel_id = admin_cog.get_channel_id("team_channel")
+        if not team_channel_id:
+            await ctx.send("Team channel not configured. Use `dm.set_channel team #channel` first.")
+            return
+            
+        team_channel = self.bot.get_channel(team_channel_id)
+        if not team_channel:
+            await ctx.send("Team channel not found.")
+            return
+            
+        section = event['sections'][sect_name]
+        
+        # Create embed
+        embed = discord.Embed(
+            title=f"📋 {sect_name}",
+            description=f"React with the team emoji to join!",
+            color=discord.Color.blue()
+        )
+        
+        teams = section.get('teams', {})
+        if not teams:
+            embed.description = "No teams created yet."
+        else:
+            for team_name, team_data in teams.items():
+                emoji = team_data.get('emoji', '❓')
+                leader = team_data.get('leader', 'Unknown')
+                current_members = len(team_data.get('members', []))
+                max_members = team_data.get('max_members', 0)
+                embed.add_field(
+                    name=f"{emoji} {team_name}",
+                    value=f"**Leader:** {leader}\n**Members:** {current_members}/{max_members}",
+                    inline=False
+                )
+        
+        # Send embed and store message ID
+        embed_message = await team_channel.send(embed=embed)
+        section_key = f"{event_id}_{sect_name}"
+        self.section_embeds[section_key] = embed_message.id
+        
+        # Add reactions for each team emoji
+        for team in teams.values():
+            emoji = team.get('emoji')
+            if emoji:
+                try:
+                    await embed_message.add_reaction(emoji)
+                except Exception as e:
+                    print(f"Error adding reaction {emoji}: {e}")
+        
+        await ctx.send(f"✅ Created section embed for '**{sect_name}**' in {team_channel.mention}")
+        await ctx.send(f"Users can now react to join teams in {team_channel.mention}")
+
     @commands.command(name="create_section", usage="<event_id> (sect_name/Max_team)")
     async def create_section(self, ctx, event_id: int, *, section_info: str):
         import re
@@ -489,6 +560,72 @@ class Team(commands.Cog):
             for team_name, team in section['teams'].items():
                 members = ', '.join(team['members']) if team['members'] else 'No members yet'
                 embed.add_field(name=f"{team_name} (Section: {sect_name})", value=members, inline=False)
+        await ctx.send(embed=embed)
+
+    @commands.command(name="delete_section_embed", usage="<event_id> <sect_name>")
+    @commands.has_permissions(administrator=True)
+    async def delete_section_embed(self, ctx, event_id: int, sect_name: str):
+        """Delete a section embed (Admin only)"""
+        section_key = f"{event_id}_{sect_name}"
+        
+        if section_key not in self.section_embeds:
+            await ctx.send(f"No section embed found for event {event_id}, section '{sect_name}'.")
+            return
+            
+        message_id = self.section_embeds[section_key]
+        
+        # Try to delete the message
+        admin_cog = self.bot.get_cog('Admin')
+        if admin_cog:
+            team_channel_id = admin_cog.get_channel_id("team_channel")
+            if team_channel_id:
+                team_channel = self.bot.get_channel(team_channel_id)
+                if team_channel:
+                    try:
+                        message = await team_channel.fetch_message(message_id)
+                        await message.delete()
+                        await ctx.send(f"✅ Deleted section embed message for '{sect_name}'")
+                    except:
+                        await ctx.send(f"⚠️ Could not delete message, but removed from tracking")
+                else:
+                    await ctx.send(f"⚠️ Could not access team channel, but removed from tracking")
+            else:
+                await ctx.send(f"⚠️ Team channel not configured, but removed from tracking")
+        else:
+            await ctx.send(f"⚠️ Admin cog not available, but removed from tracking")
+        
+        # Remove from tracking
+        del self.section_embeds[section_key]
+
+    @commands.command(name="list_section_embeds", usage="", help="List all section embeds and their status")
+    async def list_section_embeds(self, ctx):
+        """List all section embeds and their status"""
+        if not self.section_embeds:
+            await ctx.send("No section embeds created yet.")
+            return
+            
+        embed = discord.Embed(
+            title="📋 Section Embeds Status",
+            description="Sections with reaction-based team joining:",
+            color=discord.Color.blue()
+        )
+        
+        for section_key, message_id in self.section_embeds.items():
+            event_id, sect_name = section_key.split('_', 1)
+            event_id = int(event_id)
+            
+            # Get event name
+            event_cog = self.bot.get_cog('Event')
+            event_name = "Unknown Event"
+            if event_cog and event_id in event_cog.events:
+                event_name = event_cog.events[event_id]['name']
+            
+            embed.add_field(
+                name=f"📋 {sect_name}",
+                value=f"**Event:** {event_name}\n**Message ID:** {message_id}",
+                inline=False
+            )
+        
         await ctx.send(embed=embed)
 
 async def setup(bot):
