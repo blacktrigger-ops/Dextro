@@ -487,5 +487,39 @@ class Event(commands.Cog):
         else:
             await ctx.send("❌ Admin cog not available.")
 
+    async def cog_load(self):
+        # Load all events, sections, and teams from the database for all guilds
+        for guild in self.bot.guilds:
+            events = database.list_events(guild.id)
+            for event_id, name, max_sections in events:
+                self.events[event_id] = {
+                    'name': name,
+                    'max_sections': max_sections,
+                    'sections': {}
+                }
+                # Load sections for this event
+                sections = database.get_sections(event_id)
+                for section in sections:
+                    section_id, sect_name, max_teams = section
+                    self.events[event_id]['sections'][sect_name] = {
+                        'section_id': section_id,
+                        'max_teams': max_teams,
+                        'teams': {}
+                    }
+                    # Load teams for this section
+                    teams = database.get_teams(section_id)
+                    for team in teams:
+                        team_id, team_name, leader_id, max_members, emoji = team
+                        self.events[event_id]['sections'][sect_name]['teams'][team_name] = {
+                            'team_id': team_id,
+                            'emoji': emoji,
+                            'leader': f"<@{leader_id}>",
+                            'max_members': max_members,
+                            'members': []  # Optionally, load members if needed
+                        }
+                        # Optionally, load team members
+                        members = database.get_team_members_by_id(team_id)
+                        self.events[event_id]['sections'][sect_name]['teams'][team_name]['members'] = [f"<@{uid}>" for uid in members]
+
 async def setup(bot):
     await bot.add_cog(Event(bot)) 

@@ -530,29 +530,40 @@ class Team(commands.Cog):
         """Delete a section from an event (Admin only)"""
         if not await self.check_mod_channel(ctx):
             return
-            
+        import database
         event_cog = self.bot.get_cog('Event')
-        if not event_cog or event_id not in event_cog.events:
-            await ctx.send(f"Event with ID `{event_id}` not found.")
+        event = event_cog.events.get(event_id) if event_cog else None
+        section_found = False
+        # Check in memory first
+        if event and sect_name in event.get('sections', {}):
+            section_found = True
+        else:
+            # Fallback: check DB for section
+            sections = database.get_sections(event_id)
+            for section in sections:
+                section_id, db_sect_name, _ = section
+                if str(db_sect_name) == str(sect_name):
+                    section_found = True
+                    # Remove from DB
+                    database.remove_section(section_id)
+                    await ctx.send(f"Section '**{sect_name}**' has been deleted from event ID `{event_id}` (DB fallback).")
+                    # Optionally, reload event into memory
+                    if event_cog:
+                        await event_cog.cog_load()
+                    return
+        if not section_found:
+            await ctx.send(f"Section '**{sect_name}**' not found in event ID `{event_id}`.")
             return
-
-        event = event_cog.events[event_id]
-        if sect_name not in event.get('sections', {}):
-            await ctx.send(f"Section '**{sect_name}**' not found in event '**{event['name']}**'.")
-            return
-
-        # Remove from memory
-        del event['sections'][sect_name]
-
-        # Remove section embed if it exists
-        section_key = f"{event_id}_{sect_name}"
-        if section_key in self.section_embeds:
-            del self.section_embeds[section_key]
-
-        # Update event embed
-        await event_cog.update_event_embed(event_id)
-
-        await ctx.send(f"Section '**{sect_name}**' has been deleted from event '**{event['name']}**'.")
+        # Remove from memory if event is in memory
+        if event:
+            del event['sections'][sect_name]
+            # Remove section embed if it exists
+            section_key = f"{event_id}_{sect_name}"
+            if section_key in self.section_embeds:
+                del self.section_embeds[section_key]
+            # Update event embed
+            await event_cog.update_event_embed(event_id)
+            await ctx.send(f"Section '**{sect_name}**' has been deleted from event '**{event['name']}**'.")
 
     @commands.command(name="disqualify_team", usage="<event_id> <team_name> [reason]")
     @commands.has_permissions(administrator=True)
