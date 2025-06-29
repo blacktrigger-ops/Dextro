@@ -234,7 +234,8 @@ class Team(commands.Cog):
                 'max_teams': max_team,
                 'teams': {}
             }
-            # Update the event embed
+        # Always update the join embed after creating a section
+        if event_cog:
             await event_cog.update_event_embed(event_id)
         
         await ctx.send(f"Section created: **{sect_name}** (ID: `{section_id}`), Max Teams: {max_team}")
