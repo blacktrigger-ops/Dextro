@@ -209,6 +209,19 @@ class Team(commands.Cog):
             return
         sect_name, max_team = match.group(1).strip(), int(match.group(2))
         section_id = database.add_section(event_id, sect_name, max_team)
+        
+        # Update event data in memory
+        event_cog = self.bot.get_cog('Event')
+        if event_cog and event_id in event_cog.events:
+            if 'sections' not in event_cog.events[event_id]:
+                event_cog.events[event_id]['sections'] = {}
+            event_cog.events[event_id]['sections'][sect_name] = {
+                'max_teams': max_team,
+                'teams': {}
+            }
+            # Update the event embed
+            await event_cog.update_event_embed(event_id)
+        
         await ctx.send(f"Section created: **{sect_name}** (ID: `{section_id}`), Max Teams: {max_team}")
 
     @commands.command(name="create_team", usage="<section_id> (team_name/@leader/Max_member)")
@@ -225,9 +238,55 @@ class Team(commands.Cog):
         else:
             await ctx.send("Please mention the leader user.")
             return
-        emoji = None  # You can add emoji selection logic here if needed
+        
+        # Get section info to find event_id
+        sections = database.get_sections(section_id)
+        if not sections:
+            await ctx.send(f"Section with ID `{section_id}` not found.")
+            return
+        
+        # Find the event_id for this section
+        event_cog = self.bot.get_cog('Event')
+        event_id = None
+        for event_id_check, event in event_cog.events.items():
+            for sect_name, section in event.get('sections', {}).items():
+                if section.get('section_id') == section_id:
+                    event_id = event_id_check
+                    break
+            if event_id:
+                break
+        
+        if not event_id:
+            await ctx.send("Could not find event for this section.")
+            return
+        
+        emoji = "⚔️"  # Default emoji, you can customize this
         team_id = database.add_team(section_id, team_name, leader_id, max_member, emoji)
         database.add_team_member(team_id, leader_id)
+        
+        # Update event data in memory
+        if event_cog and event_id in event_cog.events:
+            # Find the section name
+            sect_name = None
+            for sect_name_check, section in event_cog.events[event_id].get('sections', {}).items():
+                if section.get('section_id') == section_id:
+                    sect_name = sect_name_check
+                    break
+            
+            if sect_name:
+                if 'teams' not in event_cog.events[event_id]['sections'][sect_name]:
+                    event_cog.events[event_id]['sections'][sect_name]['teams'] = {}
+                
+                event_cog.events[event_id]['sections'][sect_name]['teams'][team_name] = {
+                    'emoji': emoji,
+                    'leader': f"<@{leader_id}>",
+                    'max_members': max_member,
+                    'members': [f"<@{leader_id}>"]
+                }
+                
+                # Update the event embed
+                await event_cog.update_event_embed(event_id)
+        
         await ctx.send(f"Team created: **{team_name}** (ID: `{team_id}`), Leader: <@{leader_id}>, Max Members: {max_member}")
 
     @commands.command(name="join_team", usage="<team_name>")
@@ -275,40 +334,65 @@ class Team(commands.Cog):
         admin_cog = self.bot.get_cog('Admin')
         if not admin_cog:
             return
-        team_channel_id = admin_cog.get_channel_id("team_channel")
-        if not team_channel_id or reaction.message.channel.id != team_channel_id:
+        
+        # Check if this is a reaction in the join channel
+        join_channel_id = admin_cog.get_channel_id("join")
+        if not join_channel_id or reaction.message.channel.id != join_channel_id:
             return
+            
         event_cog = self.bot.get_cog('Event')
         if not event_cog:
             return
-        section_key = None
-        for key, embed_id in self.section_embeds.items():
+            
+        # Check if this is an event embed
+        event_id = None
+        for eid, embed_id in event_cog.event_embeds.items():
             if embed_id == reaction.message.id:
-                section_key = key
+                event_id = eid
                 break
-        if not section_key:
+                
+        if not event_id:
             return
-        event_id, sect_name = section_key.split('_', 1)
-        event_id = int(event_id)
+            
         event = event_cog.events.get(event_id)
-        if not event or sect_name not in event.get('sections', {}):
+        if not event:
             return
-        section = event['sections'][sect_name]
-        emoji_to_team = {team_data.get('emoji'): name for name, team_data in section['teams'].items()}
-        team_name = emoji_to_team.get(str(reaction.emoji))
-        if not team_name:
+            
+        # Find the team by emoji
+        team_found = False
+        for sect_name, section in event.get('sections', {}).items():
+            for team_name, team_data in section.get('teams', {}).items():
+                if team_data.get('emoji') == str(reaction.emoji):
+                    team_found = True
+                    break
+            if team_found:
+                break
+                
+        if not team_found:
+            await reaction.remove(user)
             return
+            
         team = section['teams'][team_name]
+        
+        # Check if user is already in the team
         if user.mention in team['members']:
             await reaction.remove(user)
             return
+            
+        # Check if team is full
         if len(team['members']) >= team.get('max_members', float('inf')):
             await reaction.remove(user)
             return
+            
+        # Add user to team
         team['members'].append(user.mention)
+        
+        # Update the event embed
+        await event_cog.update_event_embed(event_id)
+        
+        # Send notifications
         await self.send_join_notifications(user, team_name, sect_name, event['name'], "joined", method="reaction")
         await self.send_log_message(user, team_name, sect_name, event['name'], "joined", method="reaction")
-        await self.update_section_embed(event_id, sect_name)
 
     @commands.Cog.listener()
     async def on_reaction_remove(self, reaction, user):
@@ -318,35 +402,55 @@ class Team(commands.Cog):
         admin_cog = self.bot.get_cog('Admin')
         if not admin_cog:
             return
-        team_channel_id = admin_cog.get_channel_id("team_channel")
-        if not team_channel_id or reaction.message.channel.id != team_channel_id:
+        
+        # Check if this is a reaction in the join channel
+        join_channel_id = admin_cog.get_channel_id("join")
+        if not join_channel_id or reaction.message.channel.id != join_channel_id:
             return
+            
         event_cog = self.bot.get_cog('Event')
         if not event_cog:
             return
-        section_key = None
-        for key, embed_id in self.section_embeds.items():
+            
+        # Check if this is an event embed
+        event_id = None
+        for eid, embed_id in event_cog.event_embeds.items():
             if embed_id == reaction.message.id:
-                section_key = key
+                event_id = eid
                 break
-        if not section_key:
+                
+        if not event_id:
             return
-        event_id, sect_name = section_key.split('_', 1)
-        event_id = int(event_id)
+            
         event = event_cog.events.get(event_id)
-        if not event or sect_name not in event.get('sections', {}):
+        if not event:
             return
-        section = event['sections'][sect_name]
-        emoji_to_team = {team_data.get('emoji'): name for name, team_data in section['teams'].items()}
-        team_name = emoji_to_team.get(str(reaction.emoji))
-        if not team_name:
+            
+        # Find the team by emoji
+        team_found = False
+        for sect_name, section in event.get('sections', {}).items():
+            for team_name, team_data in section.get('teams', {}).items():
+                if team_data.get('emoji') == str(reaction.emoji):
+                    team_found = True
+                    break
+            if team_found:
+                break
+                
+        if not team_found:
             return
+            
         team = section['teams'][team_name]
+        
+        # Remove user from team
         if user.mention in team['members']:
             team['members'].remove(user.mention)
+            
+            # Update the event embed
+            await event_cog.update_event_embed(event_id)
+            
+            # Send notifications
             await self.send_join_notifications(user, team_name, sect_name, event['name'], "left", method="reaction")
             await self.send_log_message(user, team_name, sect_name, event['name'], "left", method="reaction")
-            await self.update_section_embed(event_id, sect_name)
 
     @commands.command(name="delete_team", usage="<event_id> <sect_name> <team_name>")
     @commands.has_permissions(administrator=True)

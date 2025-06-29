@@ -20,7 +20,44 @@ class Event(commands.Cog):
             return
         name, max_sections = match.group(1).strip(), int(match.group(2))
         event_id = database.add_event(ctx.guild.id, name, max_sections)
-        await ctx.send(f"Event created: **{name}** (ID: `{event_id}`), Max Sections: {max_sections}")
+        
+        # Store event data in memory
+        self.events[event_id] = {
+            'name': name,
+            'max_sections': max_sections,
+            'sections': {}
+        }
+        
+        # Create embed in join channel
+        admin_cog = self.bot.get_cog('Admin')
+        if admin_cog:
+            join_channel_id = admin_cog.get_channel_id("join")
+            if join_channel_id:
+                join_channel = self.bot.get_channel(join_channel_id)
+                if join_channel:
+                    embed = discord.Embed(
+                        title=f"🎯 {name}",
+                        description="React with section emojis to join teams!\n\n**Sections:**\nNo sections created yet.",
+                        color=discord.Color.green()
+                    )
+                    embed.add_field(name="Event ID", value=str(event_id), inline=True)
+                    embed.add_field(name="Max Sections", value=str(max_sections), inline=True)
+                    embed.add_field(name="Status", value="🟡 Open for Registration", inline=True)
+                    
+                    embed_message = await join_channel.send(embed=embed)
+                    
+                    # Store the embed message ID
+                    if not hasattr(self, 'event_embeds'):
+                        self.event_embeds = {}
+                    self.event_embeds[event_id] = embed_message.id
+                    
+                    await ctx.send(f"✅ Event created: **{name}** (ID: `{event_id}`)\n📋 Join embed posted in {join_channel.mention}")
+                else:
+                    await ctx.send(f"Event created: **{name}** (ID: `{event_id}`), Max Sections: {max_sections}\n⚠️ Join channel not found.")
+            else:
+                await ctx.send(f"Event created: **{name}** (ID: `{event_id}`), Max Sections: {max_sections}\n⚠️ Join channel not configured. Use `dm.set_channel join #channel`")
+        else:
+            await ctx.send(f"Event created: **{name}** (ID: `{event_id}`), Max Sections: {max_sections}")
 
     @commands.command(name="list_events", usage="", help="List all events.")
     async def list_events(self, ctx):
@@ -172,6 +209,93 @@ class Event(commands.Cog):
                 await log_channel.send(embed=log_embed)
         
         await ctx.send(f"Event '**{event_name}**' has ended! Winners have been declared and leaderboard has been reset.")
+
+    async def update_event_embed(self, event_id):
+        """Update the event embed with current sections and teams"""
+        if not hasattr(self, 'event_embeds') or event_id not in self.event_embeds:
+            return
+            
+        event = self.events.get(event_id)
+        if not event:
+            return
+            
+        admin_cog = self.bot.get_cog('Admin')
+        if not admin_cog:
+            return
+            
+        join_channel_id = admin_cog.get_channel_id("join")
+        if not join_channel_id:
+            return
+            
+        join_channel = self.bot.get_channel(join_channel_id)
+        if not join_channel:
+            return
+            
+        try:
+            embed_message = await join_channel.fetch_message(self.event_embeds[event_id])
+        except:
+            return
+            
+        # Create updated embed
+        embed = discord.Embed(
+            title=f"🎯 {event['name']}",
+            description="React with section emojis to join teams!",
+            color=discord.Color.green()
+        )
+        
+        embed.add_field(name="Event ID", value=str(event_id), inline=True)
+        embed.add_field(name="Max Sections", value=str(event['max_sections']), inline=True)
+        
+        # Determine status
+        sections = event.get('sections', {})
+        if not sections:
+            embed.add_field(name="Status", value="🟡 Open for Registration", inline=True)
+            embed.description = "React with section emojis to join teams!\n\n**Sections:**\nNo sections created yet."
+        else:
+            total_teams = sum(len(sect.get('teams', {})) for sect in sections.values())
+            total_members = sum(
+                len(team.get('members', [])) 
+                for sect in sections.values() 
+                for team in sect.get('teams', {}).values()
+            )
+            embed.add_field(name="Status", value="🟢 Active", inline=True)
+            embed.add_field(name="Sections", value=str(len(sections)), inline=True)
+            embed.add_field(name="Teams", value=str(total_teams), inline=True)
+            embed.add_field(name="Members", value=str(total_members), inline=True)
+            
+            # Add sections with teams
+            for sect_name, section in sections.items():
+                teams = section.get('teams', {})
+                if teams:
+                    section_text = ""
+                    for team_name, team_data in teams.items():
+                        emoji = team_data.get('emoji', '❓')
+                        current_members = len(team_data.get('members', []))
+                        max_members = team_data.get('max_members', 0)
+                        status = "🟢" if current_members < max_members else "🔴"
+                        section_text += f"{status} {emoji} **{team_name}** ({current_members}/{max_members})\n"
+                    embed.add_field(
+                        name=f"📋 {sect_name}",
+                        value=section_text or "No teams",
+                        inline=False
+                    )
+        
+        await embed_message.edit(embed=embed)
+        
+        # Update reactions
+        try:
+            # Clear existing reactions
+            await embed_message.clear_reactions()
+            
+            # Add section emojis
+            for sect_name, section in sections.items():
+                teams = section.get('teams', {})
+                for team_name, team_data in teams.items():
+                    emoji = team_data.get('emoji')
+                    if emoji:
+                        await embed_message.add_reaction(emoji)
+        except Exception as e:
+            print(f"Error updating reactions: {e}")
 
 async def setup(bot):
     await bot.add_cog(Event(bot)) 
