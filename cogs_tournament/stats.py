@@ -8,8 +8,19 @@ class Stats(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    async def check_mod_channel(self, ctx):
+        """Check if command is being used in the mod channel"""
+        admin_cog = self.bot.get_cog('Admin')
+        if not admin_cog:
+            await ctx.send("❌ Admin cog not available.")
+            return False
+        return await admin_cog.check_mod_channel(ctx)
+
     @commands.command(name="user_stats", usage="[@user]", help="Show event participation, team, and rank for a user (default: yourself)")
     async def user_stats(self, ctx, member: Optional[discord.Member] = None):
+        if not await self.check_mod_channel(ctx):
+            return
+            
         member = member or ctx.author
         participations = database.get_user_event_participation(ctx.guild.id, member.id)
         embed = discord.Embed(title=f"Event Stats for {member.display_name}", color=discord.Color.blurple())
@@ -25,6 +36,9 @@ class Stats(commands.Cog):
 
     @commands.command(name="team_stats", usage="<event_id> <team_name>", help="Show team stats for an event (score, rank, members)")
     async def team_stats(self, ctx, event_id: int, *, team_name: str):
+        if not await self.check_mod_channel(ctx):
+            return
+            
         stats = database.get_team_stats(ctx.guild.id, event_id, team_name)
         if not stats:
             await ctx.send("Team or event not found.")
@@ -43,6 +57,9 @@ class Stats(commands.Cog):
 
     @commands.command(name="server_stats", help="Show server-wide event/team/member stats and top users")
     async def server_stats(self, ctx):
+        if not await self.check_mod_channel(ctx):
+            return
+            
         stats = database.get_server_stats(ctx.guild.id)
         embed = discord.Embed(title=f"Server Stats for {ctx.guild.name}", color=discord.Color.green())
         if not stats:
@@ -74,6 +91,9 @@ class Stats(commands.Cog):
 
     @commands.command(name="profile", usage="[@user]", help="Show user profile: events, rank, team, etc.")
     async def profile(self, ctx, member: Optional[discord.Member] = None):
+        if not await self.check_mod_channel(ctx):
+            return
+            
         member = member or ctx.author
         stats = fetch_user_stats(member.id, ctx.guild.id)
         embed = discord.Embed(title=f"Profile: {member.display_name}", color=discord.Color.blurple())

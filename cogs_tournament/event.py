@@ -10,8 +10,19 @@ class Event(commands.Cog):
         self.next_event_id = 1
         print('[DEBUG] Event cog initialized')
 
+    async def check_mod_channel(self, ctx):
+        """Check if command is being used in the mod channel"""
+        admin_cog = self.bot.get_cog('Admin')
+        if not admin_cog:
+            await ctx.send("❌ Admin cog not available.")
+            return False
+        return await admin_cog.check_mod_channel(ctx)
+
     @commands.command(name="create_event", usage="(event_name/Max_sect)", help="Create a new event.")
     async def create_event(self, ctx, *, event_info: str):
+        if not await self.check_mod_channel(ctx):
+            return
+            
         print('[DEBUG] create_event called')
         import re
         match = re.match(r"\(([^/]+)/([0-9]+)\)", event_info.strip())
@@ -28,8 +39,79 @@ class Event(commands.Cog):
             'sections': {}
         }
         
-        # Create embed in join channel
+        # Create event role
+        role_name = f"🏆 {name}"
+        try:
+            event_role = await ctx.guild.create_role(
+                name=role_name,
+                color=discord.Color.gold(),
+                reason=f"Auto-created role for tournament: {name}"
+            )
+            self.events[event_id]['role_id'] = event_role.id
+        except Exception as e:
+            await ctx.send(f"⚠️ Could not create event role: {e}")
+            event_role = None
+        
+        # Create game channel
         admin_cog = self.bot.get_cog('Admin')
+        game_channel = None
+        if admin_cog:
+            # Get the category of the mod channel to create game channel in same category
+            mod_channel_id = admin_cog.get_channel_id("mod", ctx.guild.id)
+            if mod_channel_id:
+                mod_channel = ctx.guild.get_channel(mod_channel_id)
+                if mod_channel and mod_channel.category:
+                    try:
+                        game_channel = await ctx.guild.create_text_channel(
+                            name=f"🎮 {name.lower().replace(' ', '-')}",
+                            category=mod_channel.category,
+                            reason=f"Auto-created game channel for tournament: {name}"
+                        )
+                        self.events[event_id]['game_channel_id'] = game_channel.id
+                        
+                        # Set permissions for the game channel
+                        if event_role:
+                            await game_channel.set_permissions(event_role, 
+                                read_messages=True, 
+                                send_messages=True,
+                                reason=f"Granting access to {name} participants"
+                            )
+                        await game_channel.set_permissions(ctx.guild.default_role, 
+                            read_messages=False, 
+                            send_messages=False,
+                            reason="Restricting access to tournament participants only"
+                        )
+                    except Exception as e:
+                        await ctx.send(f"⚠️ Could not create game channel: {e}")
+        
+        # Send announcement to event channel
+        if admin_cog:
+            event_channel_id = admin_cog.get_channel_id("event")
+            if event_channel_id:
+                event_channel = self.bot.get_channel(event_channel_id)
+                if event_channel:
+                    embed = discord.Embed(
+                        title=f"🎯 Tournament Announcement: {name}",
+                        description=f"A new tournament has been created!",
+                        color=discord.Color.green()
+                    )
+                    embed.add_field(name="Event ID", value=str(event_id), inline=True)
+                    embed.add_field(name="Max Sections", value=str(max_sections), inline=True)
+                    embed.add_field(name="Status", value="🟡 Open for Registration", inline=True)
+                    
+                    if event_role:
+                        embed.add_field(name="Event Role", value=f"{event_role.mention}\n*Join teams to get this role automatically*", inline=False)
+                    
+                    if game_channel:
+                        embed.add_field(name="Game Channel", value=f"{game_channel.mention}\n*Only participants can access*", inline=False)
+                    
+                    embed.add_field(name="How to Join", value="React to the join embed in the join channel to join teams!", inline=False)
+                    
+                    # Mention the event role if it exists
+                    role_mention = f"{event_role.mention} " if event_role else ""
+                    await event_channel.send(f"{role_mention}🎯 **NEW TOURNAMENT!** 🎯", embed=embed)
+        
+        # Create embed in join channel
         if admin_cog:
             join_channel_id = admin_cog.get_channel_id("join")
             if join_channel_id:
@@ -61,6 +143,9 @@ class Event(commands.Cog):
 
     @commands.command(name="list_events", usage="", help="List all events.")
     async def list_events(self, ctx):
+        if not await self.check_mod_channel(ctx):
+            return
+            
         print('[DEBUG] list_events command called')
         events = database.list_events(ctx.guild.id)
         print(f'[DEBUG] Events from DB: {events}')
@@ -76,6 +161,9 @@ class Event(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def close_event(self, ctx, event_id: int):
         """Hard deletes everything related to an event (Admin only)"""
+        if not await self.check_mod_channel(ctx):
+            return
+
         admin_cog = self.bot.get_cog('Admin')
         team_cog = self.bot.get_cog('Team')
         leaderboard_cog = self.bot.get_cog('Leaderboard')
@@ -125,6 +213,9 @@ class Event(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def end_event(self, ctx, event_id: int, *, event_role: str = ""):
         """Declares winners and tags event role members, then resets leaderboard (Admin only)"""
+        if not await self.check_mod_channel(ctx):
+            return
+            
         admin_cog = self.bot.get_cog('Admin')
         leaderboard_cog = self.bot.get_cog('Leaderboard')
         

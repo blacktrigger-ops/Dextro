@@ -14,11 +14,14 @@ class Leaderboard(commands.Cog):
         try:
             sections = database.get_sections(event_id)
             for section in sections:
-                section_id = section[0]  # section_id is first element
+                # Safe type casting
+                section_id = int(section[0]) if section[0] is not None else 0  # type: ignore
                 teams = database.get_teams(section_id)
                 for team in teams:
-                    if team[0] == team_id:  # team_id is first element
-                        return section[1]  # section name is second element
+                    current_team_id = int(team[0]) if team[0] is not None else 0  # type: ignore
+                    if current_team_id == team_id:
+                        section_name = str(section[1]) if section[1] is not None else "Unknown"  # type: ignore
+                        return section_name
         except Exception:
             pass
         return "Unknown"
@@ -28,11 +31,14 @@ class Leaderboard(commands.Cog):
         try:
             sections = database.get_sections(event_id)
             for section in sections:
-                section_id = section[0]  # section_id is first element
+                # Safe type casting
+                section_id = int(section[0]) if section[0] is not None else 0  # type: ignore
                 teams = database.get_teams(section_id)
                 for team in teams:
-                    if team[1] == team_name:  # team[1] is team name
-                        return team[0]  # team[0] is team_id
+                    current_team_name = str(team[1]) if team[1] is not None else ""  # type: ignore
+                    if current_team_name == team_name:
+                        team_id = int(team[0]) if team[0] is not None else 0  # type: ignore
+                        return team_id
         except Exception:
             pass
         return None
@@ -80,16 +86,20 @@ class Leaderboard(commands.Cog):
             else:
                 # Sort teams by score (already sorted in SQL)
                 for i, score_data in enumerate(db_scores, 1):
-                    team_id, score = score_data
+                    # Safe type casting
+                    team_id = int(score_data[0]) if score_data[0] is not None else 0  # type: ignore
+                    score = int(score_data[1]) if score_data[1] is not None else 0  # type: ignore
+                    
                     team_details = database.get_team_info(team_id)
                     if team_details:
-                        team_name = team_details['name']
-                        leader_id = team_details['leader']
-                        max_members = team_details['max_members']
+                        team_name = str(team_details.get('name', 'Unknown'))
+                        leader_id = int(team_details.get('leader', 0)) if team_details.get('leader') is not None else 0  # type: ignore
+                        max_members = int(team_details.get('max_members', 0)) if team_details.get('max_members') is not None else 0  # type: ignore
                         
                         # Get member count
                         try:
-                            member_count = len(database.get_team_members_by_id(team_id))
+                            members = database.get_team_members_by_id(team_id)
+                            member_count = len(members) if members else 0
                         except Exception:
                             member_count = 0
                         
@@ -116,9 +126,20 @@ class Leaderboard(commands.Cog):
         embed.set_footer(text=f"Last updated: {discord.utils.utcnow().strftime('%Y-%m-%d %H:%M:%S')}")
         await embed_message.edit(embed=embed)
 
+    async def check_mod_channel(self, ctx):
+        """Check if command is being used in the mod channel"""
+        admin_cog = self.bot.get_cog('Admin')
+        if not admin_cog:
+            await ctx.send("❌ Admin cog not available.")
+            return False
+        return await admin_cog.check_mod_channel(ctx)
+
     @commands.command(name="create_leaderboard", usage="<event_id>")
     async def create_leaderboard(self, ctx, event_id: int):
         """Creates a leaderboard for an event"""
+        if not await self.check_mod_channel(ctx):
+            return
+            
         event_cog = self.bot.get_cog('Event')
         admin_cog = self.bot.get_cog('Admin')
         
@@ -163,6 +184,9 @@ class Leaderboard(commands.Cog):
     @commands.command(name="set_score", usage="<event_id> <team_name> <score>")
     async def set_score(self, ctx, event_id: int, team_name: str, score: int):
         """Sets the score for a team manually (database-backed)"""
+        if not await self.check_mod_channel(ctx):
+            return
+            
         event_cog = self.bot.get_cog('Event')
         if not event_cog or not hasattr(event_cog, 'events'):
             await ctx.send("Event data is not available.")
@@ -187,6 +211,9 @@ class Leaderboard(commands.Cog):
     @commands.command(name="add_score", usage="<event_id> <team_name> <points>")
     async def add_score(self, ctx, event_id: int, team_name: str, points: int):
         """Adds points to a team's current score (database-backed)"""
+        if not await self.check_mod_channel(ctx):
+            return
+            
         event_cog = self.bot.get_cog('Event')
         if not event_cog or not hasattr(event_cog, 'events'):
             await ctx.send("Event data is not available.")
@@ -204,7 +231,12 @@ class Leaderboard(commands.Cog):
         try:
             # Get current score
             leaderboard_data = database.get_leaderboard(event_id)
-            leaderboard = {tid: s for tid, s in leaderboard_data}
+            leaderboard = {}
+            for score_data in leaderboard_data:
+                tid = int(score_data[0]) if score_data[0] is not None else 0  # type: ignore
+                s = int(score_data[1]) if score_data[1] is not None else 0  # type: ignore
+                leaderboard[tid] = s
+                
             current_score = leaderboard.get(team_id, 0)
             new_score = current_score + points
             database.set_leaderboard_score(event_id, team_id, new_score)
@@ -216,6 +248,9 @@ class Leaderboard(commands.Cog):
     @commands.command(name="show_scores", usage="<event_id>")
     async def show_scores(self, ctx, event_id: int):
         """Shows all scores for an event (database-backed)"""
+        if not await self.check_mod_channel(ctx):
+            return
+            
         event_cog = self.bot.get_cog('Event')
         if not event_cog or not hasattr(event_cog, 'events'):
             await ctx.send("Event data is not available.")
@@ -223,12 +258,13 @@ class Leaderboard(commands.Cog):
         if event_id not in event_cog.events:
             await ctx.send(f"Event with ID `{event_id}` not found.")
             return
-            
+
         event = event_cog.events[event_id]
+        
         try:
             db_scores = database.get_leaderboard(event_id)
             if not db_scores:
-                await ctx.send(f"No scores recorded for event '**{event['name']}**' yet.")
+                await ctx.send(f"No scores recorded for event '**{event['name']}**'.")
                 return
                 
             embed = discord.Embed(
@@ -236,21 +272,39 @@ class Leaderboard(commands.Cog):
                 color=discord.Color.blue()
             )
             
-            for score_data in db_scores:
-                team_id, score = score_data
+            # Sort teams by score (already sorted in SQL)
+            for i, score_data in enumerate(db_scores, 1):
+                # Safe type casting
+                team_id = int(score_data[0]) if score_data[0] is not None else 0  # type: ignore
+                score = int(score_data[1]) if score_data[1] is not None else 0  # type: ignore
+                
                 team_details = database.get_team_info(team_id)
                 if team_details:
-                    # Get section name
+                    team_name = str(team_details.get('name', 'Unknown'))
+                    leader_id = int(team_details.get('leader', 0)) if team_details.get('leader') is not None else 0  # type: ignore
+                    
+                    # Get section info
                     section_name = self._get_section_name_for_team(event_id, team_id)
                     
+                    # Add medal emojis for top 3
+                    medal = ""
+                    if i == 1:
+                        medal = "🥇 "
+                    elif i == 2:
+                        medal = "🥈 "
+                    elif i == 3:
+                        medal = "🥉 "
+                    
                     embed.add_field(
-                        name=team_details['name'],
-                        value=f"**Score:** {score}\n**Section:** {section_name}",
-                        inline=True
+                        name=f"{medal}#{i} {team_name}",
+                        value=f"**Score:** {score}\n**Section:** {section_name}\n**Leader:** <@{leader_id}>",
+                        inline=False
                     )
+            
             await ctx.send(embed=embed)
+            
         except Exception as e:
-            await ctx.send(f"Error showing scores: {str(e)}")
+            await ctx.send(f"Error loading scores: {str(e)}")
 
 async def setup(bot):
     await bot.add_cog(Leaderboard(bot)) 
