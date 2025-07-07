@@ -1,2 +1,7 @@
-discord.py 
+discord.py
+motor
+beanie
+pymongo
+python-dotenv
+
 mysql-connector-python 
